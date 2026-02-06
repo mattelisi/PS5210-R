@@ -4,7 +4,7 @@ Materials for workshops by Matteo Lisi
 
 # Workshop 'analysis of choice behaviour'
 
-[Slides]((workshop_behaviour/PS5210_workshop_analysis_behaviour_handout.pdf)
+[Slides](workshop_behaviour/PS5210_workshop_analysis_behaviour_handout.pdf)
 
 [Worksheet](workshop_behaviour/worksheet.html)
 
