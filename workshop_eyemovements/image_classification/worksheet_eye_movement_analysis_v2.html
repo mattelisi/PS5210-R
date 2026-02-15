@@ -534,9 +534,9 @@ window.Quarto = {
 <span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Build image path manually</span></span>
 <span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.na</span>(tr<span class="sc">$</span>fake_image) <span class="sc">&amp;&amp;</span> tr<span class="sc">$</span>fake_image <span class="sc">==</span> <span class="dv">1</span>) {</span>
-<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>  imgpath <span class="ot">&lt;-</span> <span class="fu">file.path</span>(<span class="st">".."</span>, <span class="st">"img"</span>, <span class="st">"fake"</span>, tr<span class="sc">$</span>img_name)</span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>  imgpath <span class="ot">&lt;-</span> <span class="fu">file.path</span>(<span class="st">"."</span>, <span class="st">"img"</span>, <span class="st">"fake"</span>, tr<span class="sc">$</span>img_name)</span>
 <span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>} <span class="cf">else</span> {</span>
-<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>  imgpath <span class="ot">&lt;-</span> <span class="fu">file.path</span>(<span class="st">".."</span>, <span class="st">"img"</span>, <span class="st">"real"</span>, tr<span class="sc">$</span>img_name)</span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>  imgpath <span class="ot">&lt;-</span> <span class="fu">file.path</span>(<span class="st">"."</span>, <span class="st">"img"</span>, <span class="st">"real"</span>, tr<span class="sc">$</span>img_name)</span>
 <span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a>}</span>
 <span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a><span class="co"># Load PNG directly</span></span>
@@ -719,9 +719,9 @@ window.Quarto = {
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.na</span>(tr<span class="sc">$</span>fake_image) <span class="sc">&amp;&amp;</span> tr<span class="sc">$</span>fake_image <span class="sc">==</span> <span class="dv">1</span>) {</span>
-<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>  imgpath <span class="ot">&lt;-</span> <span class="fu">file.path</span>(<span class="st">".."</span>, <span class="st">"img"</span>, <span class="st">"fake"</span>, tr<span class="sc">$</span>img_name)</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>  imgpath <span class="ot">&lt;-</span> <span class="fu">file.path</span>(<span class="st">"."</span>, <span class="st">"img"</span>, <span class="st">"fake"</span>, tr<span class="sc">$</span>img_name)</span>
 <span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>} <span class="cf">else</span> {</span>
-<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>  imgpath <span class="ot">&lt;-</span> <span class="fu">file.path</span>(<span class="st">".."</span>, <span class="st">"img"</span>, <span class="st">"real"</span>, tr<span class="sc">$</span>img_name)</span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>  imgpath <span class="ot">&lt;-</span> <span class="fu">file.path</span>(<span class="st">"."</span>, <span class="st">"img"</span>, <span class="st">"real"</span>, tr<span class="sc">$</span>img_name)</span>
 <span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>}</span>
 <span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a>img_r <span class="ot">&lt;-</span> <span class="cn">NULL</span></span>
@@ -1510,9 +1510,9 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 <span id="cb25-269"><a href="#cb25-269" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb25-270"><a href="#cb25-270" aria-hidden="true" tabindex="-1"></a><span class="in"># Build image path manually</span></span>
 <span id="cb25-271"><a href="#cb25-271" aria-hidden="true" tabindex="-1"></a><span class="in">if (!is.na(tr$fake_image) &amp;&amp; tr$fake_image == 1) {</span></span>
-<span id="cb25-272"><a href="#cb25-272" aria-hidden="true" tabindex="-1"></a><span class="in">  imgpath &lt;- file.path("..", "img", "fake", tr$img_name)</span></span>
+<span id="cb25-272"><a href="#cb25-272" aria-hidden="true" tabindex="-1"></a><span class="in">  imgpath &lt;- file.path(".", "img", "fake", tr$img_name)</span></span>
 <span id="cb25-273"><a href="#cb25-273" aria-hidden="true" tabindex="-1"></a><span class="in">} else {</span></span>
-<span id="cb25-274"><a href="#cb25-274" aria-hidden="true" tabindex="-1"></a><span class="in">  imgpath &lt;- file.path("..", "img", "real", tr$img_name)</span></span>
+<span id="cb25-274"><a href="#cb25-274" aria-hidden="true" tabindex="-1"></a><span class="in">  imgpath &lt;- file.path(".", "img", "real", tr$img_name)</span></span>
 <span id="cb25-275"><a href="#cb25-275" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
 <span id="cb25-276"><a href="#cb25-276" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb25-277"><a href="#cb25-277" aria-hidden="true" tabindex="-1"></a><span class="in"># Load PNG directly</span></span>
@@ -1639,9 +1639,9 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 <span id="cb25-402"><a href="#cb25-402" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb25-403"><a href="#cb25-403" aria-hidden="true" tabindex="-1"></a><span class="in">```{r, fig.align='center', fig.width=6.5, fig.height=5.5}</span></span>
 <span id="cb25-404"><a href="#cb25-404" aria-hidden="true" tabindex="-1"></a><span class="in">if (!is.na(tr$fake_image) &amp;&amp; tr$fake_image == 1) {</span></span>
-<span id="cb25-405"><a href="#cb25-405" aria-hidden="true" tabindex="-1"></a><span class="in">  imgpath &lt;- file.path("..", "img", "fake", tr$img_name)</span></span>
+<span id="cb25-405"><a href="#cb25-405" aria-hidden="true" tabindex="-1"></a><span class="in">  imgpath &lt;- file.path(".", "img", "fake", tr$img_name)</span></span>
 <span id="cb25-406"><a href="#cb25-406" aria-hidden="true" tabindex="-1"></a><span class="in">} else {</span></span>
-<span id="cb25-407"><a href="#cb25-407" aria-hidden="true" tabindex="-1"></a><span class="in">  imgpath &lt;- file.path("..", "img", "real", tr$img_name)</span></span>
+<span id="cb25-407"><a href="#cb25-407" aria-hidden="true" tabindex="-1"></a><span class="in">  imgpath &lt;- file.path(".", "img", "real", tr$img_name)</span></span>
 <span id="cb25-408"><a href="#cb25-408" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
 <span id="cb25-409"><a href="#cb25-409" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb25-410"><a href="#cb25-410" aria-hidden="true" tabindex="-1"></a><span class="in">img_r &lt;- NULL</span></span>

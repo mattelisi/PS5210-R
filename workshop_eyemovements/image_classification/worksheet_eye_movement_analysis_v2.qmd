@@ -257,9 +257,9 @@ tr <- ds2$trial[[t]]
 
 # Build image path manually
 if (!is.na(tr$fake_image) && tr$fake_image == 1) {
-  imgpath <- file.path("..", "img", "fake", tr$img_name)
+  imgpath <- file.path(".", "img", "fake", tr$img_name)
 } else {
-  imgpath <- file.path("..", "img", "real", tr$img_name)
+  imgpath <- file.path(".", "img", "real", tr$img_name)
 }
 
 # Load PNG directly
@@ -386,9 +386,9 @@ fixtab
 
 ```{r, fig.align='center', fig.width=6.5, fig.height=5.5}
 if (!is.na(tr$fake_image) && tr$fake_image == 1) {
-  imgpath <- file.path("..", "img", "fake", tr$img_name)
+  imgpath <- file.path(".", "img", "fake", tr$img_name)
 } else {
-  imgpath <- file.path("..", "img", "real", tr$img_name)
+  imgpath <- file.path(".", "img", "real", tr$img_name)
 }
 
 img_r <- NULL
