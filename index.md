@@ -14,11 +14,15 @@ Materials for workshops by Matteo Lisi
 ### Free-viewing task
 
 [Worksheet free-viewing task](workshop_eyemovements/image_classification/worksheet_eye_movement_analysis_v2.html)
+
 [Data folder](https://github.com/mattelisi/PS5210-R/tree/main/workshop_eyemovements/image_classification/data)
+
+Note: to download a single folder from a github repository you can use [https://download-directory.github.io/](https://download-directory.github.io/)
 
 ### Anti-saccade task
 
 [Worksheet anti-saccade task](workshop_eyemovements/anti_saccade/worksheet_anti_saccade_analysis_v1.html)
+
 [Data folder](https://github.com/mattelisi/PS5210-R/tree/main/workshop_eyemovements/anti_saccade/data)
 
 <br><br>
