@@ -1,0 +1,370 @@
+---
+title: "Workshop on Eye-Movement Analysis in R: anti-saccade task"
+subtitle: "PS5210 25-26"
+author: "Matteo Lisi"
+format:
+  html:
+    toc: true
+    code-tools: true
+    code-fold: show
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+This worksheet illustrates analysis of the eyetracking data in the anti-saccade task.
+
+## Activity 1 - Setup
+
+```{r}
+rm(list = ls())
+
+library(eyelinker)
+source("eyelink_source.R")
+```
+
+## Activity 2 - Screen settings and geometry
+
+```{r}
+scr <- list(
+  subDist = 80,   # subject distance (cm)
+  width = 570,    # monitor width (mm)
+  xres = 1920,
+  yres = 1080
+)
+scr$xCenter <- scr$xres / 2
+scr$yCenter <- scr$yres / 2
+
+ppd <- va2pix(1, scr)
+ppd
+```
+
+## Activity 3 - Convert EDF to ASC and import
+
+```{r}
+edf <- "./data/S2301.edf"
+
+# Simple conversion step
+system2("edf2asc", args = c("-y", edf))
+
+asc <- sub("\\.[Ee][Dd][Ff]$", ".asc", edf)
+dat <- read.asc(asc, parse_all = TRUE)
+
+str(dat)
+```
+
+Inspect key messages:
+
+```{r}
+head(dat$msg$text, 20)
+
+table(grepl("^EVENT_FixationDot$", dat$msg$text))
+table(grepl("^EVENT_TargetOnset$", dat$msg$text))
+table(grepl("^TRIAL_START", dat$msg$text))
+table(grepl("^TRIAL_END", dat$msg$text))
+
+head(dat$msg$text[grepl("^TrialData", dat$msg$text)], 6)
+```
+
+## Activity 4 - Trial parsing loop
+
+For each trial we extract:
+
+- trial timing (`TRIAL_START`, `EVENT_FixationDot`, `EVENT_TargetOnset`, `TRIAL_END`)
+- trial metadata from `TrialData` (`Soa`, `target_side`, `anti_saccade`, `correct`)
+- gaze samples between `t_start` and `t_end - 10`
+- timestamps re-centered to target onset (`time = 0` at target onset)
+
+```{r}
+msg <- dat$msg[order(dat$msg$time), , drop = FALSE]
+raw <- dat$raw[order(dat$raw$time), , drop = FALSE]
+
+# Build a trialdata lookup table keyed by trial number.
+# TrialData format used in this task:
+# TrialData <trial_n> <Soa> <target_side> <anti_saccade> <correct> ...
+trialdata_map <- list()
+
+for (i in seq_len(nrow(msg))) {
+  text_i <- msg$text[i]
+  if (is.na(text_i) || !grepl("^TrialData", text_i)) next
+
+  tok <- strsplit(trimws(text_i), "\\s+")[[1]]
+  if (length(tok) < 6) next
+
+  tr_n <- suppressWarnings(as.integer(tok[2]))
+  if (is.na(tr_n)) next
+
+  # Keep the first occurrence (some files duplicate TrialData messages)
+  key <- as.character(tr_n)
+  if (is.null(trialdata_map[[key]])) {
+    trialdata_map[[key]] <- list(
+      trial_n = tr_n,
+      Soa = suppressWarnings(as.numeric(tok[3])),
+      target_side = suppressWarnings(as.integer(as.numeric(tok[4]))),
+      anti_saccade = suppressWarnings(as.integer(as.numeric(tok[5]))),
+      correct = suppressWarnings(as.integer(as.numeric(tok[6])))
+    )
+  }
+}
+
+trials <- list()
+trial_count <- 0L
+
+trial_n <- NA_integer_
+trial_n_2 <- NA_integer_
+t_start <- NA_integer_
+t_end <- NA_integer_
+fixation_onset <- NA_integer_
+target_onset <- NA_integer_
+
+for (i in seq_len(nrow(msg))) {
+  text_i <- msg$text[i]
+  if (is.na(text_i) || text_i == "") next
+
+  sa <- strsplit(trimws(text_i), "\\s+")[[1]]
+  if (length(sa) == 0) next
+
+  if (sa[1] == "TRIAL_START" && length(sa) >= 2) {
+    trial_n <- suppressWarnings(as.integer(sa[2]))
+    t_start <- as.integer(msg$time[i])
+  }
+
+  if (sa[1] == "EVENT_FixationDot") {
+    fixation_onset <- as.integer(msg$time[i])
+  }
+
+  if (sa[1] == "EVENT_TargetOnset") {
+    target_onset <- as.integer(msg$time[i])
+  }
+
+  if (sa[1] == "TRIAL_END" && length(sa) >= 2) {
+    trial_n_2 <- suppressWarnings(as.integer(sa[2]))
+    t_end <- as.integer(msg$time[i]) + 100 # add extra ms for visualisation
+  }
+
+  ready <- !is.na(trial_n) && !is.na(trial_n_2) && !is.na(t_start) && !is.na(target_onset) && !is.na(t_end)
+
+  if (ready) {
+    trial_count <- trial_count + 1L
+
+    # use t_end - 10 to avoid occasional missing ms at trial end.
+    idx_start <- match(t_start, raw$time)
+    if (is.na(idx_start)) idx_start <- which.min(abs(raw$time - t_start))
+
+    idx_end_target <- t_end - 10L
+    idx_end <- match(idx_end_target, raw$time)
+    if (is.na(idx_end)) idx_end <- which.min(abs(raw$time - idx_end_target))
+
+    if (idx_end < idx_start) {
+      tmp <- idx_start
+      idx_start <- idx_end
+      idx_end <- tmp
+    }
+
+    idx <- seq.int(idx_start, idx_end)
+
+    timestamp <- as.integer(raw$time[idx] - target_onset)
+    eye_x <- as.numeric(raw$xp[idx])
+    eye_y <- as.numeric(raw$yp[idx])
+
+    # Missing values and off-screen values -> NA
+    miss <- (eye_x == 100000000) | (eye_y == 100000000)
+    eye_x[miss] <- NA_real_
+    eye_y[miss] <- NA_real_
+
+    bad <- eye_x < 0 | eye_x > scr$xres | eye_y < 0 | eye_y > scr$yres
+    bad[is.na(bad)] <- FALSE
+    eye_x[bad] <- NA_real_
+    eye_y[bad] <- NA_real_
+
+    td <- trialdata_map[[as.character(trial_n)]]
+
+    trials[[trial_count]] <- list(
+      trial_n = trial_n,
+      t_start = t_start,
+      t_end = t_end,
+      fixation_onset = fixation_onset,
+      target_onset = target_onset,
+      target_side = if (!is.null(td)) td$target_side else NA_integer_,
+      correct = if (!is.null(td)) td$correct else NA_integer_,
+      Soa = if (!is.null(td)) td$Soa else NA_real_,
+      anti_saccade = if (!is.null(td)) td$anti_saccade else NA_integer_,
+      timestamp = timestamp,
+      eye_x = eye_x,
+      eye_y = eye_y
+    )
+
+    # reset state variables
+    trial_n <- NA_integer_
+    trial_n_2 <- NA_integer_
+    t_start <- NA_integer_
+    t_end <- NA_integer_
+    fixation_onset <- NA_integer_
+    target_onset <- NA_integer_
+  }
+}
+
+ds2 <- list(trial = trials)
+
+length(ds2$trial)
+names(ds2$trial[[1]])
+```
+
+Inspect a compact summary:
+
+```{r}
+trial_tab <- data.frame(
+  trial_n = vapply(ds2$trial, function(x) x$trial_n, numeric(1)),
+  Soa = vapply(ds2$trial, function(x) x$Soa, numeric(1)),
+  target_side = vapply(ds2$trial, function(x) x$target_side, numeric(1)),
+  anti_saccade = vapply(ds2$trial, function(x) x$anti_saccade, numeric(1)),
+  correct = vapply(ds2$trial, function(x) x$correct, numeric(1))
+)
+head(trial_tab, 10)
+```
+
+## Activity 5 - Basic behavioural checks
+
+```{r}
+cat("Number of parsed trials:", nrow(trial_tab), "\n")
+
+cat("Overall accuracy:\n")
+mean(trial_tab$correct, na.rm = TRUE)
+
+cat("Accuracy by trial type (anti_saccade: 0 = pro, 1 = anti):\n")
+tapply(trial_tab$correct, trial_tab$anti_saccade, mean, na.rm = TRUE)
+```
+
+## Activity 6 - Visualise one trial (XY path and time courses)
+
+```{r, fig.align='center', fig.width=10, fig.height=4}
+t <- 1
+tr <- ds2$trial[[t]]
+
+XY <- cbind(tr$eye_x, tr$eye_y)
+
+time_sec <- tr$timestamp / 1000
+
+op <- par(no.readonly = TRUE)
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+
+# XY trace in screen coordinates
+plot(XY[, 1], scr$yres - XY[, 2], type = "l", lwd = 2, col = "blue",
+     xlab = "X [px]", ylab = "Y [px]")
+
+# X and Y over time aligned to target onset (t = 0)
+plot(time_sec, XY[, 1], type = "l", col = "red", lwd = 1.5,
+     xlab = "Time from target onset [sec]", ylab = "Position [px]")
+lines(time_sec, XY[, 2], col = "blue", lwd = 1.5)
+abline(v = 0, lty = 2)
+
+par(op)
+```
+
+## Activity 7 - Saccade detection on one trial
+
+Use the Engbert and Mergenthaler parser to examine saccade responses.
+
+```{r}
+t <- 1
+tr <- ds2$trial[[t]]
+
+SAMPRATE <- 1000
+velSD <- 5
+minDur <- 8
+VELTYPE <- 2
+mergeInt <- 10
+
+XY <- cbind(tr$eye_x, tr$eye_y)
+
+# Convert to centered coordinates in visual degrees
+xrsf <- (1 / ppd) * cbind(XY[, 1] - scr$xCenter, scr$yCenter - XY[, 2])
+xrs <- movmean2d(xrsf, 6)
+
+vrs <- vecvel(xrs, SAMPRATE, VELTYPE)
+vrsf <- vecvel(xrsf, SAMPRATE, VELTYPE)
+
+ms <- microsacc_merge(xrsf, vrsf, velSD, minDur, mergeInt)
+mrs <- saccpar(ms$msac)
+
+mrs
+```
+
+```{r, fig.align='center', fig.width=8, fig.height=6}
+time_sec <- (tr$timestamp - tr$timestamp[1] + 1) / 1000
+
+op <- par(no.readonly = TRUE)
+par(mfrow = c(2, 1), mar = c(4, 4, 2, 1))
+
+ylim_pos <- max(abs(xrs), na.rm = TRUE)
+plot(time_sec, xrs[, 1], type = "l", col = rgb(0.8, 0, 0), lwd = 1,
+     xlab = "", ylab = "position [deg]", ylim = c(-ylim_pos, ylim_pos))
+lines(time_sec, xrs[, 2], col = rgb(0.2, 0.2, 0.8), lwd = 1)
+abline(v = (0 - tr$timestamp[1] + 1) / 1000, lty = 2)
+
+if (nrow(mrs) > 0) {
+  for (i in seq_len(nrow(mrs))) {
+    idx <- mrs[i, 1]:mrs[i, 2]
+    lines(time_sec[idx], xrs[idx, 1], col = rgb(0.8, 0, 0), lwd = 3)
+    lines(time_sec[idx], xrs[idx, 2], col = rgb(0, 0, 0.8), lwd = 3)
+  }
+}
+
+ylim_vel <- max(abs(vrs), na.rm = TRUE)
+plot(time_sec, vrs[, 1], type = "l", col = rgb(0.8, 0, 0), lwd = 1,
+     xlab = "time [sec]", ylab = "velocity [deg/sec]", ylim = c(-ylim_vel, ylim_vel))
+lines(time_sec, vrs[, 2], col = rgb(0.2, 0.2, 0.8), lwd = 1)
+abline(v = (0 - tr$timestamp[1] + 1) / 1000, lty = 2)
+
+if (nrow(mrs) > 0) {
+  for (i in seq_len(nrow(mrs))) {
+    idx <- mrs[i, 1]:mrs[i, 2]
+    lines(time_sec[idx], vrs[idx, 1], col = rgb(0.8, 0, 0), lwd = 3)
+    lines(time_sec[idx], vrs[idx, 2], col = rgb(0, 0, 0.8), lwd = 3)
+  }
+}
+
+par(op)
+```
+
+## Activity 8 - Optional: classify first post-target saccade direction
+
+A simple way to classify response direction:
+
+- look for the first detected saccade that starts after target onset (`timestamp >= 0`)
+- classify it as rightward (`+1`) if `dx > 0`, leftward (`-1`) if `dx < 0`
+
+```{r}
+first_response <- rep(NA_integer_, length(ds2$trial))
+
+for (tt in seq_along(ds2$trial)) {
+  tr <- ds2$trial[[tt]]
+  XY <- cbind(tr$eye_x, tr$eye_y)
+  xrsf <- (1 / ppd) * cbind(XY[, 1] - scr$xCenter, scr$yCenter - XY[, 2])
+  vrsf <- vecvel(xrsf, 1000, 2)
+  mrs <- saccpar(microsacc_merge(xrsf, vrsf, 5, 8, 10)$msac)
+
+  if (nrow(mrs) == 0) next
+
+  onset_samples <- mrs[, 1]
+  onset_time <- tr$timestamp[onset_samples]
+
+  idx_post <- which(onset_time >= 0)
+  if (length(idx_post) == 0) next
+
+  i0 <- idx_post[1]
+  dx <- mrs[i0, 5] * cos(mrs[i0, 6]) # equivalent to mrs raw dx sign via dist/angle
+
+  first_response[tt] <- if (is.na(dx)) NA_integer_ else if (dx > 0) 1L else -1L
+}
+
+table(first_response, useNA = "ifany")
+```
+
+Further tasks:
+
+- [ ] Modify the loop to compute saccade latency (time of first post-target onset).
+- [ ] Compare latency distributions between pro-saccade (`anti_saccade = 0`) and anti-saccade (`anti_saccade = 1`) trials.
+- [ ] Compare your computed direction label with the task `correct` field.
+- [ ] Run the analysis across all participants in the data folder, and compute group-level statistics.

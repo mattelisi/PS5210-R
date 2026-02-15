@@ -1,0 +1,435 @@
+---
+title: "Workshop on Eye-Movement Analysis in R"
+subtitle: "PS5210 25-26"
+author: "Matteo Lisi"
+format:
+  html:
+    toc: true
+    code-tools: true
+    code-fold: show
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+This worksheet illustrates R code for processing the image-classification task. The goal is to extract trial-wise gaze data, parse saccades with the Engbert and Mergenthaler velocity-based algorithm, and compute fixation summaries for scanpath visualisation.
+
+## Activity 1 - Setup
+
+```{r}
+rm(list = ls())
+
+# some packagtes neededs
+library(eyelinker)
+library(png)
+
+# Custom functions
+# the file includes generic helper functions for geometry and saccade detection:
+# va2pix(), vecvel(), movmean2d(), microsacc_merge(), saccpar()
+source("eyelink_source.R")
+```
+
+## Activity 2 - Screen geometry and pixels-per-degree
+
+```{r}
+scr <- list(
+  subDist = 80,
+  width = 570,
+  xres = 1920,
+  yres = 1080
+)
+scr$xCenter <- scr$xres / 2
+scr$yCenter <- scr$yres / 2
+
+img_duration <- 3 # seconds
+ppd <- va2pix(1, scr)
+ppd
+```
+
+
+Applying trigonometric functions, the formula for transforming size on screen (in pixels) to degrees of visual angle is 
+$$\text{ppd} =\text{distance} \times \tan \left( \frac{\pi}{180} \right) \frac{\text{xres}}{\text{width}}$$
+
+If you check the `va2pix` code you will see it is computed as $\text{ppd} =\text{subDist} \cdot \tan \left( \frac{\pi}{180} \right) \frac{\text{xres}}{(10 \cdot \text{width})}$, since the monitor width is defined in mm and the screen distance is defined in cm.
+
+## Activity 3 - Convert EDF to ASC and import with eyelinker
+
+We convert the edf (Eyelink Data File) into a text file (asc) that can be imported into R using the `eyelinker` package. 
+
+```{r}
+# Choose the EDF file
+edf <- "./data/S2301.edf"
+
+# Simple conversion command, note that the edf2asc 
+system2("edf2asc", args = c("-y", edf))
+
+# Build ASC name from EDF name 
+# replace edf -> asc in filename
+# note that "\\." tells sub to look for a dot (.) in the filename
+# this is because in regex syntax "." means any character
+# so to match a literal dot (.), we escape it as \.
+# in R strings, backslashes must themselves be escaped, so \. becomes "\\."
+asc <- sub("\\.edf$", ".asc", edf)
+
+# parse_all=TRUE is essential for reading custom messages such as TrialData
+dat <- read.asc(asc, parse_all = TRUE)
+
+str(dat)
+```
+
+Check key messages:
+
+```{r}
+# first few lines of msg in the file
+head(dat$msg$text, 20)
+
+# these messages contains the trial-specific design information
+dat$msg$text[grepl("^TrialData", dat$msg$text)]
+```
+
+## Activity 4 - Manual trial parsing in a loop
+
+In this section we implement a loop that manually iterate through the data and compile all needed information for each trial
+
+```{r}
+# split the messages, and the 'raw' data containing the x-y gaze position samples
+msg <- dat$msg[order(dat$msg$time), , drop = FALSE]
+raw <- dat$raw[order(dat$raw$time), , drop = FALSE]
+
+# First, parse all TrialData messages into a lookup table keyed by trial number.
+# Message format here is:
+# TrialData <trial_n> <subject> <is_fake> <img_name> <response> <accuracy> <imgRect1> <imgRect2> <imgRect3> <imgRect4>
+trialdata_list <- list()
+
+for (i in seq_len(nrow(msg))) {
+  text_i <- msg$text[i]
+  if (is.na(text_i) || !grepl("^TrialData", text_i)) next
+
+  tok <- strsplit(trimws(text_i), "\\s+")[[1]]
+  if (length(tok) < 11) next
+
+  tr_n <- suppressWarnings(as.integer(tok[2]))
+  if (is.na(tr_n)) next
+
+  trialdata_list[[as.character(tr_n)]] <- list(
+    trial_n = tr_n,
+    fake_image = suppressWarnings(as.integer(tok[4])),
+    img_name = tok[5],
+    accuracy = suppressWarnings(as.integer(tok[7])),
+    imgRect = suppressWarnings(as.numeric(tok[8:11]))
+  )
+}
+
+# Now loop through all messages and build trial-wise gaze data.
+# We keep temporary variables and "commit" a trial when we have enough info.
+trials <- list()
+trial_count <- 0
+
+trial_n <- NA_integer_
+t_start <- NA_integer_
+t_end <- NA_integer_
+img_onset <- NA_integer_
+img_offset <- NA_integer_
+
+for (i in seq_len(nrow(msg))) {
+  text_i <- msg$text[i]
+  if (is.na(text_i) || text_i == "") next
+
+  # take the message, clean up any extra spaces at the edges (using trimws()), 
+  # split it into tokens based on whitespace, and return the vector of tokens
+  # in regex \s is a whitespace (space, tab, newline), and \s+ indicate one or more whitespace
+  sa <- strsplit(trimws(text_i), "\\s+")[[1]]
+  
+  if (length(sa) == 0) next
+
+  # Trial start message
+  if (sa[1] == "TRIAL_START" && length(sa) >= 2) {
+    trial_n <- suppressWarnings(as.integer(sa[2]))
+    t_start <- as.integer(msg$time[i])
+  }
+
+  # Image onset message
+  if (sa[1] == "EVENT_FixationDot") {
+    img_onset <- as.integer(msg$time[i])
+    img_offset <- img_onset + as.integer(img_duration * 1000)
+  }
+
+  # Trial end message
+  if (sa[1] == "TRIAL_END" && length(sa) >= 2) {
+    t_end <- as.integer(msg$time[i])
+  }
+
+  # If we have enough information, extract samples for this trial
+  ready <- !is.na(trial_n) && !is.na(t_start) && !is.na(img_onset) && !is.na(img_offset) && !is.na(t_end)
+
+  if (ready) {
+    trial_count <- trial_count + 1
+
+    # Find sample indexes for start and end of extracted window
+    idx_start <- match(t_start, raw$time)
+    if (is.na(idx_start)) idx_start <- which.min(abs(raw$time - t_start))
+
+    idx_end_target <- img_offset + 400 # include 400 ms after image offset
+    idx_end <- match(idx_end_target, raw$time)
+    if (is.na(idx_end)) idx_end <- which.min(abs(raw$time - idx_end_target))
+
+    if (idx_end < idx_start) {
+      tmp <- idx_start
+      idx_start <- idx_end
+      idx_end <- tmp
+    }
+
+    idx <- seq.int(idx_start, idx_end)
+
+    # Timestamp relative to image onset
+    timestamp <- as.integer(raw$time[idx] - img_onset)
+
+    # Gaze samples
+    eye_x <- as.numeric(raw$xp[idx])
+    eye_y <- as.numeric(raw$yp[idx])
+
+    # Replace missing code with NA
+    miss <- (eye_x == 100000000) | (eye_y == 100000000)
+    eye_x[miss] <- NA_real_
+    eye_y[miss] <- NA_real_
+
+    # Remove off-screen points
+    bad <- eye_x < 0 | eye_x > scr$xres | eye_y < 0 | eye_y > scr$yres
+    bad[is.na(bad)] <- FALSE
+    eye_x[bad] <- NA_real_
+    eye_y[bad] <- NA_real_
+
+    # Pull trial metadata from TrialData lookup (if available)
+    td <- trialdata_list[[as.character(trial_n)]]
+
+    img_name <- if (!is.null(td)) td$img_name else NA_character_
+    fake_image <- if (!is.null(td)) td$fake_image else NA_integer_
+    accuracy <- if (!is.null(td)) td$accuracy else NA_integer_
+    imgRect <- if (!is.null(td)) td$imgRect else rep(NA_real_, 4)
+
+    trials[[trial_count]] <- list(
+      trial_n = trial_n,
+      t_start = t_start,
+      t_end = t_end,
+      img_onset = img_onset,
+      img_name = img_name,
+      fake_image = fake_image,
+      accuracy = accuracy,
+      imgRect = imgRect,
+      timestamp = timestamp,
+      eye_x = eye_x,
+      eye_y = eye_y
+    )
+
+    # Reset temporary variables for the next trial
+    trial_n <- NA_integer_
+    t_start <- NA_integer_
+    t_end <- NA_integer_
+    img_onset <- NA_integer_
+    img_offset <- NA_integer_
+  }
+}
+
+ds2 <- list(trial = trials)
+
+length(ds2$trial)
+names(ds2$trial[[1]])
+```
+
+Inspect the parsed trials:
+
+```{r}
+trial_overview <- data.frame(
+  trial_n = vapply(ds2$trial, function(x) x$trial_n, numeric(1)),
+  img_name = vapply(ds2$trial, function(x) x$img_name, character(1)),
+  fake_image = vapply(ds2$trial, function(x) x$fake_image, numeric(1)),
+  accuracy = vapply(ds2$trial, function(x) x$accuracy, numeric(1))
+)
+trial_overview
+```
+
+## Activity 5 - Raw visualisation for one trial
+
+```{r, fig.align='center', fig.width=11, fig.height=3.5}
+t <- 2
+tr <- ds2$trial[[t]]
+
+# Build image path manually
+if (!is.na(tr$fake_image) && tr$fake_image == 1) {
+  imgpath <- file.path("..", "img", "fake", tr$img_name)
+} else {
+  imgpath <- file.path("..", "img", "real", tr$img_name)
+}
+
+# Load PNG directly
+img_r <- NULL
+if (!is.na(tr$img_name) && file.exists(imgpath)) {
+  img_r <- as.raster(readPNG(imgpath))
+}
+
+op <- par(no.readonly = TRUE)
+par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+
+plot.new()
+if (!is.null(img_r)) {
+  rasterImage(img_r, 0, 0, 1, 1)
+} else {
+  text(0.5, 0.5, "Image not available")
+}
+
+XY <- cbind(tr$eye_x, -tr$eye_y)
+plot(XY[, 1], XY[, 2], type = "l", lwd = 2, col = "blue", xlab = "X [px]", ylab = "-Y [px]")
+
+plot(tr$timestamp, XY[, 1], type = "l", lwd = 2, col = "red",
+     xlab = "Time from image onset [ms]", ylab = "Position [px]")
+lines(tr$timestamp, XY[, 2], lwd = 2, col = "blue")
+
+par(op)
+```
+
+## Activity 6 - Saccade detection (Engbert and Mergenthaler)
+
+```{r}
+# select trial
+t <- 2
+tr <- ds2$trial[[t]]
+
+SAMPRATE <- 1000
+velSD <- 5
+minDur <- 8
+VELTYPE <- 2
+mergeInt <- 10
+
+XY <- cbind(tr$eye_x, tr$eye_y)
+
+# Convert from screen pixels to visual degrees (centered coordinates)
+xrsf <- (1 / ppd) * cbind(XY[, 1] - scr$xCenter, scr$yCenter - XY[, 2])
+
+# Smooth position traces for nicer plotting
+xrs <- movmean2d(xrsf, 6)
+
+# Compute velocities
+vrs <- vecvel(xrs, SAMPRATE, VELTYPE)
+vrsf <- vecvel(xrsf, SAMPRATE, VELTYPE)
+
+# Detect saccades and derive parameters
+ms <- microsacc_merge(xrsf, vrsf, velSD, minDur, mergeInt)
+mrs <- saccpar(ms$msac)
+
+mrs
+```
+
+## Activity 7 - Position/velocity traces with highlighted saccades
+
+```{r, fig.align='center', fig.width=8, fig.height=6}
+timers <- as.numeric(tr$timestamp)
+time_sec <- (timers - timers[1] + 1) / 1000
+
+op <- par(no.readonly = TRUE)
+par(mfrow = c(2, 1), mar = c(4, 4, 2, 1))
+
+ylim_pos <- max(abs(xrs), na.rm = TRUE)
+plot(time_sec, xrs[, 1], type = "l", col = rgb(0.8, 0, 0), lwd = 1,
+     xlab = "", ylab = "position [deg]", ylim = c(-ylim_pos, ylim_pos))
+lines(time_sec, xrs[, 2], col = rgb(0.2, 0.2, 0.8), lwd = 1)
+
+if (nrow(mrs) > 0) {
+  for (i in seq_len(nrow(mrs))) {
+    idx <- mrs[i, 1]:mrs[i, 2]
+    lines(time_sec[idx], xrs[idx, 1], col = rgb(0.8, 0, 0), lwd = 3)
+    lines(time_sec[idx], xrs[idx, 2], col = rgb(0, 0, 0.8), lwd = 3)
+  }
+}
+
+ylim_vel <- max(abs(vrs), na.rm = TRUE)
+plot(time_sec, vrs[, 1], type = "l", col = rgb(0.8, 0, 0), lwd = 1,
+     xlab = "time [sec]", ylab = "velocity [deg/sec]", ylim = c(-ylim_vel, ylim_vel))
+lines(time_sec, vrs[, 2], col = rgb(0.2, 0.2, 0.8), lwd = 1)
+
+if (nrow(mrs) > 0) {
+  for (i in seq_len(nrow(mrs))) {
+    idx <- mrs[i, 1]:mrs[i, 2]
+    lines(time_sec[idx], vrs[idx, 1], col = rgb(0.8, 0, 0), lwd = 3)
+    lines(time_sec[idx], vrs[idx, 2], col = rgb(0, 0, 0.8), lwd = 3)
+  }
+}
+
+par(op)
+```
+
+## Activity 8 - Scanpath on top of image + fixation table
+
+```{r}
+# Fixations are intervals between saccades
+n_fix <- nrow(mrs) + 1
+fixtab <- matrix(NA_real_, n_fix, 5)
+colnames(fixtab) <- c("fix_start", "fix_end", "fix_dur", "fix_x", "fix_y")
+
+for (i in seq_len(n_fix)) {
+  fix_start <- if (i == 1) 1 else mrs[i - 1, 2] + 1
+  fix_end <- if (i == n_fix) length(tr$timestamp) else mrs[i, 1] - 1
+
+  if (fix_end < fix_start) next
+
+  fix_dur <- fix_end - fix_start
+  fix_xy <- c(
+    mean(xrs[fix_start:fix_end, 1], na.rm = TRUE),
+    mean(xrs[fix_start:fix_end, 2], na.rm = TRUE)
+  )
+
+  fixtab[i, ] <- c(fix_start, fix_end, fix_dur, fix_xy)
+}
+
+fixtab
+```
+
+```{r, fig.align='center', fig.width=6.5, fig.height=5.5}
+if (!is.na(tr$fake_image) && tr$fake_image == 1) {
+  imgpath <- file.path("..", "img", "fake", tr$img_name)
+} else {
+  imgpath <- file.path("..", "img", "real", tr$img_name)
+}
+
+img_r <- NULL
+if (!is.na(tr$img_name) && file.exists(imgpath)) {
+  img_r <- as.raster(readPNG(imgpath))
+}
+
+display_x <- c(-(scr$xres / 2) / ppd, (scr$xres / 2) / ppd)
+display_y <- c(-(scr$yres / 2) / ppd, (scr$yres / 2) / ppd)
+
+# resize figure
+display_x <- display_x * 0.6
+display_y <- display_y * 0.6
+
+plot(NA, NA, xlim = display_x, ylim = display_y, xlab = "X [deg]", ylab = "Y [deg]", asp = 1)
+
+if (!is.null(img_r) && !any(is.na(tr$imgRect))) {
+  img_x1 <- (tr$imgRect[1] - scr$xCenter) / ppd
+  img_x2 <- (tr$imgRect[3] - scr$xCenter) / ppd
+  img_y1 <- (scr$yCenter - tr$imgRect[2]) / ppd
+  img_y2 <- (scr$yCenter - tr$imgRect[4]) / ppd
+  rasterImage(img_r, img_x1, img_y2, img_x2, img_y1)
+}
+
+lines(xrs[, 1], xrs[, 2], col = "black")
+
+if (nrow(mrs) > 0) {
+  for (i in seq_len(nrow(mrs))) {
+    idx <- mrs[i, 1]:mrs[i, 2]
+    lines(xrs[idx, 1], xrs[idx, 2], col = "blue", lwd = 2)
+  }
+}
+
+for (i in seq_len(n_fix)) {
+  if (any(is.na(fixtab[i, ]))) next
+  points(fixtab[i, "fix_x"], fixtab[i, "fix_y"],
+         pch = 1, col = "blue", cex = max(0.2, fixtab[i, "fix_dur"] / 200))
+}
+```
+
+Practice tasks:
+
+- [ ] Modify the trial-parsing loop to work with another experiment that uses different message labels.
+- [ ] Re-run the saccade and fixation analysis for different trials.

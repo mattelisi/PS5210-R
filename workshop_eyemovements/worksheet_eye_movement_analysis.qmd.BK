@@ -1,0 +1,309 @@
+---
+title: "Workshop on Eye-Movement Analysis in R"
+subtitle: "PS5210 25-26"
+author: "Matteo Lisi"
+format:
+  html:
+    toc: true
+    code-tools: true
+    code-fold: show
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+This worksheet mirrors the Matlab handout for the image-classification task, but using R.
+
+The goal is to extract trial-wise gaze data, parse saccades with the Engbert and Mergenthaler velocity-based algorithm, and compute fixation summaries for scanpath visualisation.
+
+## Activity 1 - Setup and helper functions
+
+```{r}
+rm(list = ls())
+
+# Main package for ASC import
+library(eyelinker)
+
+# Reuse helper functions translated from Matlab
+# (contains va2pix, vecvel, microsacc_merge, saccpar, prepare_trials, ...)
+source_path <- normalizePath(
+  file.path("..", "..", "eyetracking_tasks", "image-classification", "analysis", "eyelink_source.R"),
+  mustWork = FALSE
+)
+
+if (!file.exists(source_path)) {
+  stop("Cannot find helper file: ", source_path)
+}
+source(source_path)
+```
+
+## Activity 2 - Screen geometry and pixel-per-degree conversion
+
+As in the Matlab handout, we define monitor geometry and compute `ppd` (pixels per degree of visual angle).
+
+```{r}
+scr <- list(
+  subDist = 80,   # subject distance (cm)
+  width = 570,    # monitor width (mm)
+  xres = 1920,
+  yres = 1080
+)
+scr$xCenter <- scr$xres / 2
+scr$yCenter <- scr$yres / 2
+
+img_duration <- 3 # seconds
+ppd <- va2pix(1, scr)
+ppd
+```
+
+The conversion is:
+
+$$\text{ppd}=\frac{\text{subDist}\cdot\tan(\pi/180)}{\text{width}/(10\cdot\text{xres})}$$
+
+## Activity 3 - Import EDF/ASC and inspect structure
+
+If `S1.asc` does not exist, we try converting from `S1.edf` using `edf2asc`.
+
+```{r}
+edf <- "S1.edf"
+asc <- convert_edf_to_asc(edf)
+
+# parse_all=TRUE is essential to retrieve custom messages such as TrialData
+# from dat$msg$text
+dat <- read.asc(asc, parse_all = TRUE)
+
+str(dat)
+```
+
+Check key custom messages:
+
+```{r}
+head(dat$msg$text, 20)
+sum(grepl("^EVENT_FixationDot$", dat$msg$text), na.rm = TRUE)
+dat$msg$text[grepl("^TrialData", dat$msg$text)]
+```
+
+Practice tasks:
+
+- [ ] Print other message subsets and identify trial boundaries.
+- [ ] Verify how many `TrialData` messages are present.
+
+## Activity 4 - Build trial-wise data structure
+
+As in the Matlab script, we convert raw samples plus event timestamps into a list of trials with fields:
+
+- `trial_n`, `t_start`, `t_end`, `img_onset`
+- `img_name`, `fake_image`, `accuracy`, `imgRect`
+- `timestamp`, `eye_x`, `eye_y`
+
+```{r}
+ds2 <- prepare_trials(
+  dat = dat,
+  scr = scr,
+  img_duration_ms = as.integer(img_duration * 1000),
+  post_img_ms = 400L
+)
+
+length(ds2$trial)
+names(ds2$trial[[1]])
+```
+
+Inspect parsed trial metadata:
+
+```{r}
+trial_overview <- data.frame(
+  trial_n = vapply(ds2$trial, function(x) x$trial_n, numeric(1)),
+  img_name = vapply(ds2$trial, function(x) x$img_name, character(1)),
+  fake_image = vapply(ds2$trial, function(x) x$fake_image, numeric(1)),
+  accuracy = vapply(ds2$trial, function(x) x$accuracy, numeric(1))
+)
+trial_overview
+```
+
+Practice tasks:
+
+- [ ] Confirm that `img_name` matches the `TrialData` messages.
+- [ ] Check whether all trials have non-missing `imgRect` values.
+
+## Activity 5 - Raw visualisation for one trial
+
+Equivalent to the Matlab section "Visualizations (1)":
+
+```{r, fig.align='center', fig.width=11, fig.height=3.5}
+t <- 1
+tr <- ds2$trial[[t]]
+
+imgpath <- resolve_img_path(tr)
+img_r <- if (!is.na(tr$img_name) && file.exists(imgpath)) load_image_as_raster(imgpath) else NULL
+
+op <- par(no.readonly = TRUE)
+par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+
+# panel 1: image
+plot.new()
+if (!is.null(img_r)) {
+  rasterImage(img_r, 0, 0, 1, 1)
+} else {
+  text(0.5, 0.5, "Image not available")
+}
+
+# panel 2: XY trace in pixel coordinates (invert Y like Matlab example)
+XY <- cbind(tr$eye_x, -tr$eye_y)
+plot(XY[, 1], XY[, 2], type = "l", lwd = 2, col = "blue", xlab = "X [px]", ylab = "-Y [px]")
+
+# panel 3: position over time
+time_ms <- tr$timestamp
+plot(time_ms, XY[, 1], type = "l", lwd = 2, col = "red", xlab = "Time from image onset [ms]", ylab = "Position [px]")
+lines(time_ms, XY[, 2], lwd = 2, col = "blue")
+
+par(op)
+```
+
+## Activity 6 - Saccade detection (Engbert and Mergenthaler)
+
+We now follow the same pipeline as in Matlab:
+
+1. transform gaze from pixels to degrees relative to screen center;
+2. smooth for plotting;
+3. compute velocity with `vecvel`;
+4. detect saccades with `microsacc_merge`;
+5. compute summary parameters with `saccpar`.
+
+```{r}
+t <- min(2, length(ds2$trial))
+tr <- ds2$trial[[t]]
+
+SAMPRATE <- 1000
+velSD <- 5
+minDur <- 8
+VELTYPE <- 2
+mergeInt <- 10
+
+XY <- cbind(tr$eye_x, tr$eye_y)
+
+# degrees, centered on screen
+xrsf <- (1 / ppd) * cbind(XY[, 1] - scr$xCenter, scr$yCenter - XY[, 2])
+
+# filtered version for plotting only
+xrs <- movmean2d(xrsf, 6)
+
+# velocity
+vrs <- vecvel(xrs, SAMPRATE, VELTYPE)
+vrsf <- vecvel(xrsf, SAMPRATE, VELTYPE)
+
+# saccades and parameters
+ms <- microsacc_merge(xrsf, vrsf, velSD, minDur, mergeInt)
+mrs <- saccpar(ms$msac)
+
+mrs
+```
+
+Practice tasks:
+
+- [ ] Read the comments in `microsacc_merge` and `saccpar` and map each output column to its meaning.
+- [ ] Try changing `velSD` and see how the number of detected saccades changes.
+
+## Activity 7 - Position and velocity traces with saccades highlighted
+
+```{r, fig.align='center', fig.width=8, fig.height=6}
+timers <- as.numeric(tr$timestamp)
+time_sec <- (timers - timers[1] + 1) / 1000
+
+op <- par(no.readonly = TRUE)
+par(mfrow = c(2, 1), mar = c(4, 4, 2, 1))
+
+ylim_pos <- max(abs(xrs), na.rm = TRUE)
+plot(time_sec, xrs[, 1], type = "l", col = rgb(0.8, 0, 0), lwd = 1,
+     xlab = "", ylab = "position [deg]", ylim = c(-ylim_pos, ylim_pos))
+lines(time_sec, xrs[, 2], col = rgb(0.2, 0.2, 0.8), lwd = 1)
+
+if (nrow(mrs) > 0) {
+  for (i in seq_len(nrow(mrs))) {
+    idx <- mrs[i, 1]:mrs[i, 2]
+    lines(time_sec[idx], xrs[idx, 1], col = rgb(0.8, 0, 0), lwd = 3)
+    lines(time_sec[idx], xrs[idx, 2], col = rgb(0, 0, 0.8), lwd = 3)
+  }
+}
+
+ylim_vel <- max(abs(vrs), na.rm = TRUE)
+plot(time_sec, vrs[, 1], type = "l", col = rgb(0.8, 0, 0), lwd = 1,
+     xlab = "time [sec]", ylab = "velocity [deg/sec]", ylim = c(-ylim_vel, ylim_vel))
+lines(time_sec, vrs[, 2], col = rgb(0.2, 0.2, 0.8), lwd = 1)
+
+if (nrow(mrs) > 0) {
+  for (i in seq_len(nrow(mrs))) {
+    idx <- mrs[i, 1]:mrs[i, 2]
+    lines(time_sec[idx], vrs[idx, 1], col = rgb(0.8, 0, 0), lwd = 3)
+    lines(time_sec[idx], vrs[idx, 2], col = rgb(0, 0, 0.8), lwd = 3)
+  }
+}
+
+par(op)
+```
+
+## Activity 8 - Scanpath overlay and fixation table
+
+As in the Matlab handout, define fixations as intervals between consecutive saccades.
+
+```{r}
+n_fix <- nrow(mrs) + 1
+fixtab <- matrix(NA_real_, n_fix, 5)
+colnames(fixtab) <- c("fix_start", "fix_end", "fix_dur", "fix_x", "fix_y")
+
+for (i in seq_len(n_fix)) {
+  fix_start <- if (i == 1) 1 else mrs[i - 1, 2] + 1
+  fix_end <- if (i == n_fix) length(tr$timestamp) else mrs[i, 1] - 1
+
+  if (fix_end < fix_start) next
+
+  fix_dur <- fix_end - fix_start
+  fix_xy <- c(
+    mean(xrs[fix_start:fix_end, 1], na.rm = TRUE),
+    mean(xrs[fix_start:fix_end, 2], na.rm = TRUE)
+  )
+
+  fixtab[i, ] <- c(fix_start, fix_end, fix_dur, fix_xy)
+}
+
+fixtab
+```
+
+```{r, fig.align='center', fig.width=6.5, fig.height=5.5}
+imgpath <- resolve_img_path(tr)
+img_r <- if (!is.na(tr$img_name) && file.exists(imgpath)) load_image_as_raster(imgpath) else NULL
+
+display_x <- c(-(scr$xres / 2) / ppd, (scr$xres / 2) / ppd)
+display_y <- c(-(scr$yres / 2) / ppd, (scr$yres / 2) / ppd)
+
+plot(NA, NA, xlim = display_x, ylim = display_y, xlab = "X [deg]", ylab = "Y [deg]", asp = 1)
+
+if (!is.null(img_r) && !any(is.na(tr$imgRect))) {
+  img_x1 <- (tr$imgRect[1] - scr$xCenter) / ppd
+  img_x2 <- (tr$imgRect[3] - scr$xCenter) / ppd
+  img_y1 <- (scr$yCenter - tr$imgRect[2]) / ppd
+  img_y2 <- (scr$yCenter - tr$imgRect[4]) / ppd
+  rasterImage(img_r, img_x1, img_y2, img_x2, img_y1)
+}
+
+lines(xrs[, 1], xrs[, 2], col = "black")
+
+if (nrow(mrs) > 0) {
+  for (i in seq_len(nrow(mrs))) {
+    idx <- mrs[i, 1]:mrs[i, 2]
+    lines(xrs[idx, 1], xrs[idx, 2], col = "blue", lwd = 2)
+  }
+}
+
+for (i in seq_len(n_fix)) {
+  if (any(is.na(fixtab[i, ]))) next
+  points(fixtab[i, "fix_x"], fixtab[i, "fix_y"],
+         pch = 1, col = "blue", cex = max(0.2, fixtab[i, "fix_dur"] / 20))
+}
+```
+
+Practice tasks:
+
+- [ ] Re-run Activities 6 to 8 with a different trial.
+- [ ] Compare scanpaths for a fake image vs a real image.
+- [ ] Summarise mean fixation duration per trial and inspect whether it differs with accuracy.
