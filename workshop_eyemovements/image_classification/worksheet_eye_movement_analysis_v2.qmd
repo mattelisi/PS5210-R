@@ -239,6 +239,8 @@ names(ds2$trial[[1]])
 
 Inspect the parsed trials:
 
+(note we use `vapply()` to extract scalar values from `ds2$trial`, which is a list type of object)
+
 ```{r}
 trial_overview <- data.frame(
   trial_n = vapply(ds2$trial, function(x) x$trial_n, numeric(1)),
@@ -282,7 +284,7 @@ XY <- cbind(tr$eye_x, -tr$eye_y)
 plot(XY[, 1], XY[, 2], type = "l", lwd = 2, col = "blue", xlab = "X [px]", ylab = "-Y [px]")
 
 plot(tr$timestamp, XY[, 1], type = "l", lwd = 2, col = "red",
-     xlab = "Time from image onset [ms]", ylab = "Position [px]")
+     xlab = "Time from image onset [ms]", ylab = "Position [px]", ylim=range(XY))
 lines(tr$timestamp, XY[, 2], lwd = 2, col = "blue")
 
 par(op)
@@ -319,6 +321,19 @@ mrs <- saccpar(ms$msac)
 
 mrs
 ```
+
+**Meaning of output variables from `saccpar()`**
+
+- `a`      : Start sample index of the saccade (first threshold-crossing sample).
+- `b`      : End sample index of the saccade (last sample belonging to the event).
+- `d`      : Duration in samples $(b - a + 1)$. Convert to ms via d / sampling_rate * 1000.
+- `vpeak`  : Peak velocity magnitude ($\max \sqrt{v_x^2 + v_y^2}$) within the saccade.
+- `dist`   : Straight-line displacement magnitude between start and end positions: $\sqrt{(x_b - x_a)^2 + (y_b - y_a)^2}$.
+- `angd`   : Direction of straight-line displacement (radians), computed with $\text{atan2}(d_y, d_x)$.
+- `ampl`   : Trajectory amplitude based on signed position ranges within the saccade; reflects full movement excursion and may exceed dist for curved paths.
+- `anga`   : Direction of trajectory range vector (radians), computed with $\text{atan2}(\text{range}_y, \text{range}_x)$.
+
+
 
 ## Activity 7 - Position/velocity traces with highlighted saccades
 
@@ -431,5 +446,4 @@ for (i in seq_len(n_fix)) {
 
 Practice tasks:
 
-- [ ] Modify the trial-parsing loop to work with another experiment that uses different message labels.
-- [ ] Re-run the saccade and fixation analysis for different trials.
+- [ ] Re-run the saccade and fixation analysis for different participants and trials.

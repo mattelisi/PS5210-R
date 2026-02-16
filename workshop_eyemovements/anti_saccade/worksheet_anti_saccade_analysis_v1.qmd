@@ -140,7 +140,7 @@ for (i in seq_len(nrow(msg))) {
 
   if (sa[1] == "TRIAL_END" && length(sa) >= 2) {
     trial_n_2 <- suppressWarnings(as.integer(sa[2]))
-    t_end <- as.integer(msg$time[i]) + 100 # add extra ms for visualisation
+    t_end <- as.integer(msg$time[i])
   }
 
   ready <- !is.na(trial_n) && !is.na(trial_n_2) && !is.na(t_start) && !is.na(target_onset) && !is.na(t_end)
@@ -148,11 +148,11 @@ for (i in seq_len(nrow(msg))) {
   if (ready) {
     trial_count <- trial_count + 1L
 
-    # use t_end - 10 to avoid occasional missing ms at trial end.
+    # use t_end - 10 if there are missing ms at trial end.
     idx_start <- match(t_start, raw$time)
     if (is.na(idx_start)) idx_start <- which.min(abs(raw$time - t_start))
 
-    idx_end_target <- t_end - 10L
+    idx_end_target <- t_end -1 # - 10L
     idx_end <- match(idx_end_target, raw$time)
     if (is.na(idx_end)) idx_end <- which.min(abs(raw$time - idx_end_target))
 
@@ -226,20 +226,30 @@ head(trial_tab, 10)
 
 ## Activity 5 - Basic behavioural checks
 
+Number of parse trials for this participant:
 ```{r}
-cat("Number of parsed trials:", nrow(trial_tab), "\n")
+nrow(trial_tab)
+```
 
-cat("Overall accuracy:\n")
+Overall accuracy:
+
+```{r}
 mean(trial_tab$correct, na.rm = TRUE)
+```
 
-cat("Accuracy by trial type (anti_saccade: 0 = pro, 1 = anti):\n")
+
+Accuracy by trial type:
+
+```{r}
 tapply(trial_tab$correct, trial_tab$anti_saccade, mean, na.rm = TRUE)
 ```
+
+
 
 ## Activity 6 - Visualise one trial (XY path and time courses)
 
 ```{r, fig.align='center', fig.width=10, fig.height=4}
-t <- 1
+t <- 20
 tr <- ds2$trial[[t]]
 
 XY <- cbind(tr$eye_x, tr$eye_y)
@@ -267,7 +277,7 @@ par(op)
 Use the Engbert and Mergenthaler parser to examine saccade responses.
 
 ```{r}
-t <- 1
+t <- 20
 tr <- ds2$trial[[t]]
 
 SAMPRATE <- 1000
@@ -345,6 +355,8 @@ for (tt in seq_along(ds2$trial)) {
   vrsf <- vecvel(xrsf, 1000, 2)
   mrs <- saccpar(microsacc_merge(xrsf, vrsf, 5, 8, 10)$msac)
 
+  # if there are no saccades, stop the current iteration
+  # and jump to the next value of the loop variable `tt`
   if (nrow(mrs) == 0) next
 
   onset_samples <- mrs[, 1]

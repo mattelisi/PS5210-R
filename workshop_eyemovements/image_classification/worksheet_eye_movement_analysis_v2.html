@@ -503,6 +503,7 @@ window.Quarto = {
 </div>
 </div>
 <p>Inspect the parsed trials:</p>
+<p>(note we use <code>vapply()</code> to extract scalar values from <code>ds2$trial</code>, which is a list type of object)</p>
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
@@ -559,7 +560,7 @@ window.Quarto = {
 <span id="cb16-28"><a href="#cb16-28" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(XY[, <span class="dv">1</span>], XY[, <span class="dv">2</span>], <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"blue"</span>, <span class="at">xlab =</span> <span class="st">"X [px]"</span>, <span class="at">ylab =</span> <span class="st">"-Y [px]"</span>)</span>
 <span id="cb16-29"><a href="#cb16-29" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb16-30"><a href="#cb16-30" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(tr<span class="sc">$</span>timestamp, XY[, <span class="dv">1</span>], <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"red"</span>,</span>
-<span id="cb16-31"><a href="#cb16-31" aria-hidden="true" tabindex="-1"></a>     <span class="at">xlab =</span> <span class="st">"Time from image onset [ms]"</span>, <span class="at">ylab =</span> <span class="st">"Position [px]"</span>)</span>
+<span id="cb16-31"><a href="#cb16-31" aria-hidden="true" tabindex="-1"></a>     <span class="at">xlab =</span> <span class="st">"Time from image onset [ms]"</span>, <span class="at">ylab =</span> <span class="st">"Position [px]"</span>, <span class="at">ylim=</span><span class="fu">range</span>(XY))</span>
 <span id="cb16-32"><a href="#cb16-32" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(tr<span class="sc">$</span>timestamp, XY[, <span class="dv">2</span>], <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"blue"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
@@ -622,6 +623,17 @@ window.Quarto = {
 [10,] 3033 3045 13 123.3123 1.1015730  1.6810273 1.1015730  1.6810273</code></pre>
 </div>
 </div>
+<p><strong>Meaning of output variables from <code>saccpar()</code></strong></p>
+<ul>
+<li><code>a</code> : Start sample index of the saccade (first threshold-crossing sample).</li>
+<li><code>b</code> : End sample index of the saccade (last sample belonging to the event).</li>
+<li><code>d</code> : Duration in samples <span class="math inline">\((b - a + 1)\)</span>. Convert to ms via d / sampling_rate * 1000.</li>
+<li><code>vpeak</code> : Peak velocity magnitude (<span class="math inline">\(\max \sqrt{v_x^2 + v_y^2}\)</span>) within the saccade.</li>
+<li><code>dist</code> : Straight-line displacement magnitude between start and end positions: <span class="math inline">\(\sqrt{(x_b - x_a)^2 + (y_b - y_a)^2}\)</span>.</li>
+<li><code>angd</code> : Direction of straight-line displacement (radians), computed with <span class="math inline">\(\text{atan2}(d_y, d_x)\)</span>.</li>
+<li><code>ampl</code> : Trajectory amplitude based on signed position ranges within the saccade; reflects full movement excursion and may exceed dist for curved paths.</li>
+<li><code>anga</code> : Direction of trajectory range vector (radians), computed with <span class="math inline">\(\text{atan2}(\text{range}_y, \text{range}_x)\)</span>.</li>
+</ul>
 </section>
 <section id="activity-7---positionvelocity-traces-with-highlighted-saccades" class="level2">
 <h2 class="anchored" data-anchor-id="activity-7---positionvelocity-traces-with-highlighted-saccades">Activity 7 - Position/velocity traces with highlighted saccades</h2>
@@ -771,8 +783,7 @@ window.Quarto = {
 </div>
 <p>Practice tasks:</p>
 <ul class="task-list">
-<li><label><input type="checkbox">Modify the trial-parsing loop to work with another experiment that uses different message labels.</label></li>
-<li><label><input type="checkbox">Re-run the saccade and fixation analysis for different trials.</label></li>
+<li><label><input type="checkbox">Re-run the saccade and fixation analysis for different participants and trials.</label></li>
 </ul>
 <!-- -->
 
@@ -1492,200 +1503,214 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 <span id="cb25-249"><a href="#cb25-249" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb25-250"><a href="#cb25-250" aria-hidden="true" tabindex="-1"></a>Inspect the parsed trials:</span>
 <span id="cb25-251"><a href="#cb25-251" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-254"><a href="#cb25-254" aria-hidden="true" tabindex="-1"></a><span class="in">```{r}</span></span>
-<span id="cb25-255"><a href="#cb25-255" aria-hidden="true" tabindex="-1"></a>trial_overview <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
-<span id="cb25-256"><a href="#cb25-256" aria-hidden="true" tabindex="-1"></a>  <span class="at">trial_n =</span> <span class="fu">vapply</span>(ds2<span class="sc">$</span>trial, <span class="cf">function</span>(x) x<span class="sc">$</span>trial_n, <span class="fu">numeric</span>(<span class="dv">1</span>)),</span>
-<span id="cb25-257"><a href="#cb25-257" aria-hidden="true" tabindex="-1"></a>  <span class="at">img_name =</span> <span class="fu">vapply</span>(ds2<span class="sc">$</span>trial, <span class="cf">function</span>(x) x<span class="sc">$</span>img_name, <span class="fu">character</span>(<span class="dv">1</span>)),</span>
-<span id="cb25-258"><a href="#cb25-258" aria-hidden="true" tabindex="-1"></a>  <span class="at">fake_image =</span> <span class="fu">vapply</span>(ds2<span class="sc">$</span>trial, <span class="cf">function</span>(x) x<span class="sc">$</span>fake_image, <span class="fu">numeric</span>(<span class="dv">1</span>)),</span>
-<span id="cb25-259"><a href="#cb25-259" aria-hidden="true" tabindex="-1"></a>  <span class="at">accuracy =</span> <span class="fu">vapply</span>(ds2<span class="sc">$</span>trial, <span class="cf">function</span>(x) x<span class="sc">$</span>accuracy, <span class="fu">numeric</span>(<span class="dv">1</span>))</span>
-<span id="cb25-260"><a href="#cb25-260" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb25-261"><a href="#cb25-261" aria-hidden="true" tabindex="-1"></a>trial_overview</span>
-<span id="cb25-262"><a href="#cb25-262" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb25-263"><a href="#cb25-263" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-264"><a href="#cb25-264" aria-hidden="true" tabindex="-1"></a><span class="fu">## Activity 5 - Raw visualisation for one trial</span></span>
+<span id="cb25-252"><a href="#cb25-252" aria-hidden="true" tabindex="-1"></a>(note we use <span class="in">`vapply()`</span> to extract scalar values from <span class="in">`ds2$trial`</span>, which is a list type of object)</span>
+<span id="cb25-253"><a href="#cb25-253" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-256"><a href="#cb25-256" aria-hidden="true" tabindex="-1"></a><span class="in">```{r}</span></span>
+<span id="cb25-257"><a href="#cb25-257" aria-hidden="true" tabindex="-1"></a>trial_overview <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb25-258"><a href="#cb25-258" aria-hidden="true" tabindex="-1"></a>  <span class="at">trial_n =</span> <span class="fu">vapply</span>(ds2<span class="sc">$</span>trial, <span class="cf">function</span>(x) x<span class="sc">$</span>trial_n, <span class="fu">numeric</span>(<span class="dv">1</span>)),</span>
+<span id="cb25-259"><a href="#cb25-259" aria-hidden="true" tabindex="-1"></a>  <span class="at">img_name =</span> <span class="fu">vapply</span>(ds2<span class="sc">$</span>trial, <span class="cf">function</span>(x) x<span class="sc">$</span>img_name, <span class="fu">character</span>(<span class="dv">1</span>)),</span>
+<span id="cb25-260"><a href="#cb25-260" aria-hidden="true" tabindex="-1"></a>  <span class="at">fake_image =</span> <span class="fu">vapply</span>(ds2<span class="sc">$</span>trial, <span class="cf">function</span>(x) x<span class="sc">$</span>fake_image, <span class="fu">numeric</span>(<span class="dv">1</span>)),</span>
+<span id="cb25-261"><a href="#cb25-261" aria-hidden="true" tabindex="-1"></a>  <span class="at">accuracy =</span> <span class="fu">vapply</span>(ds2<span class="sc">$</span>trial, <span class="cf">function</span>(x) x<span class="sc">$</span>accuracy, <span class="fu">numeric</span>(<span class="dv">1</span>))</span>
+<span id="cb25-262"><a href="#cb25-262" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb25-263"><a href="#cb25-263" aria-hidden="true" tabindex="-1"></a>trial_overview</span>
+<span id="cb25-264"><a href="#cb25-264" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb25-265"><a href="#cb25-265" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-266"><a href="#cb25-266" aria-hidden="true" tabindex="-1"></a><span class="in">```{r, fig.align='center', fig.width=11, fig.height=3.5}</span></span>
-<span id="cb25-267"><a href="#cb25-267" aria-hidden="true" tabindex="-1"></a><span class="in">t &lt;- 2</span></span>
-<span id="cb25-268"><a href="#cb25-268" aria-hidden="true" tabindex="-1"></a><span class="in">tr &lt;- ds2$trial[[t]]</span></span>
-<span id="cb25-269"><a href="#cb25-269" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-270"><a href="#cb25-270" aria-hidden="true" tabindex="-1"></a><span class="in"># Build image path manually</span></span>
-<span id="cb25-271"><a href="#cb25-271" aria-hidden="true" tabindex="-1"></a><span class="in">if (!is.na(tr$fake_image) &amp;&amp; tr$fake_image == 1) {</span></span>
-<span id="cb25-272"><a href="#cb25-272" aria-hidden="true" tabindex="-1"></a><span class="in">  imgpath &lt;- file.path(".", "img", "fake", tr$img_name)</span></span>
-<span id="cb25-273"><a href="#cb25-273" aria-hidden="true" tabindex="-1"></a><span class="in">} else {</span></span>
-<span id="cb25-274"><a href="#cb25-274" aria-hidden="true" tabindex="-1"></a><span class="in">  imgpath &lt;- file.path(".", "img", "real", tr$img_name)</span></span>
-<span id="cb25-275"><a href="#cb25-275" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
-<span id="cb25-276"><a href="#cb25-276" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-277"><a href="#cb25-277" aria-hidden="true" tabindex="-1"></a><span class="in"># Load PNG directly</span></span>
-<span id="cb25-278"><a href="#cb25-278" aria-hidden="true" tabindex="-1"></a><span class="in">img_r &lt;- NULL</span></span>
-<span id="cb25-279"><a href="#cb25-279" aria-hidden="true" tabindex="-1"></a><span class="in">if (!is.na(tr$img_name) &amp;&amp; file.exists(imgpath)) {</span></span>
-<span id="cb25-280"><a href="#cb25-280" aria-hidden="true" tabindex="-1"></a><span class="in">  img_r &lt;- as.raster(readPNG(imgpath))</span></span>
-<span id="cb25-281"><a href="#cb25-281" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
-<span id="cb25-282"><a href="#cb25-282" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-283"><a href="#cb25-283" aria-hidden="true" tabindex="-1"></a><span class="in">op &lt;- par(no.readonly = TRUE)</span></span>
-<span id="cb25-284"><a href="#cb25-284" aria-hidden="true" tabindex="-1"></a><span class="in">par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))</span></span>
-<span id="cb25-285"><a href="#cb25-285" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-286"><a href="#cb25-286" aria-hidden="true" tabindex="-1"></a><span class="in">plot.new()</span></span>
-<span id="cb25-287"><a href="#cb25-287" aria-hidden="true" tabindex="-1"></a><span class="in">if (!is.null(img_r)) {</span></span>
-<span id="cb25-288"><a href="#cb25-288" aria-hidden="true" tabindex="-1"></a><span class="in">  rasterImage(img_r, 0, 0, 1, 1)</span></span>
-<span id="cb25-289"><a href="#cb25-289" aria-hidden="true" tabindex="-1"></a><span class="in">} else {</span></span>
-<span id="cb25-290"><a href="#cb25-290" aria-hidden="true" tabindex="-1"></a><span class="in">  text(0.5, 0.5, "Image not available")</span></span>
-<span id="cb25-291"><a href="#cb25-291" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
-<span id="cb25-292"><a href="#cb25-292" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-293"><a href="#cb25-293" aria-hidden="true" tabindex="-1"></a><span class="in">XY &lt;- cbind(tr$eye_x, -tr$eye_y)</span></span>
-<span id="cb25-294"><a href="#cb25-294" aria-hidden="true" tabindex="-1"></a><span class="in">plot(XY[, 1], XY[, 2], type = "l", lwd = 2, col = "blue", xlab = "X [px]", ylab = "-Y [px]")</span></span>
-<span id="cb25-295"><a href="#cb25-295" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-296"><a href="#cb25-296" aria-hidden="true" tabindex="-1"></a><span class="in">plot(tr$timestamp, XY[, 1], type = "l", lwd = 2, col = "red",</span></span>
-<span id="cb25-297"><a href="#cb25-297" aria-hidden="true" tabindex="-1"></a><span class="in">     xlab = "Time from image onset [ms]", ylab = "Position [px]")</span></span>
-<span id="cb25-298"><a href="#cb25-298" aria-hidden="true" tabindex="-1"></a><span class="in">lines(tr$timestamp, XY[, 2], lwd = 2, col = "blue")</span></span>
-<span id="cb25-299"><a href="#cb25-299" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-300"><a href="#cb25-300" aria-hidden="true" tabindex="-1"></a><span class="in">par(op)</span></span>
-<span id="cb25-301"><a href="#cb25-301" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb25-302"><a href="#cb25-302" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-303"><a href="#cb25-303" aria-hidden="true" tabindex="-1"></a><span class="fu">## Activity 6 - Saccade detection (Engbert and Mergenthaler)</span></span>
+<span id="cb25-266"><a href="#cb25-266" aria-hidden="true" tabindex="-1"></a><span class="fu">## Activity 5 - Raw visualisation for one trial</span></span>
+<span id="cb25-267"><a href="#cb25-267" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-268"><a href="#cb25-268" aria-hidden="true" tabindex="-1"></a><span class="in">```{r, fig.align='center', fig.width=11, fig.height=3.5}</span></span>
+<span id="cb25-269"><a href="#cb25-269" aria-hidden="true" tabindex="-1"></a><span class="in">t &lt;- 2</span></span>
+<span id="cb25-270"><a href="#cb25-270" aria-hidden="true" tabindex="-1"></a><span class="in">tr &lt;- ds2$trial[[t]]</span></span>
+<span id="cb25-271"><a href="#cb25-271" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-272"><a href="#cb25-272" aria-hidden="true" tabindex="-1"></a><span class="in"># Build image path manually</span></span>
+<span id="cb25-273"><a href="#cb25-273" aria-hidden="true" tabindex="-1"></a><span class="in">if (!is.na(tr$fake_image) &amp;&amp; tr$fake_image == 1) {</span></span>
+<span id="cb25-274"><a href="#cb25-274" aria-hidden="true" tabindex="-1"></a><span class="in">  imgpath &lt;- file.path(".", "img", "fake", tr$img_name)</span></span>
+<span id="cb25-275"><a href="#cb25-275" aria-hidden="true" tabindex="-1"></a><span class="in">} else {</span></span>
+<span id="cb25-276"><a href="#cb25-276" aria-hidden="true" tabindex="-1"></a><span class="in">  imgpath &lt;- file.path(".", "img", "real", tr$img_name)</span></span>
+<span id="cb25-277"><a href="#cb25-277" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
+<span id="cb25-278"><a href="#cb25-278" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-279"><a href="#cb25-279" aria-hidden="true" tabindex="-1"></a><span class="in"># Load PNG directly</span></span>
+<span id="cb25-280"><a href="#cb25-280" aria-hidden="true" tabindex="-1"></a><span class="in">img_r &lt;- NULL</span></span>
+<span id="cb25-281"><a href="#cb25-281" aria-hidden="true" tabindex="-1"></a><span class="in">if (!is.na(tr$img_name) &amp;&amp; file.exists(imgpath)) {</span></span>
+<span id="cb25-282"><a href="#cb25-282" aria-hidden="true" tabindex="-1"></a><span class="in">  img_r &lt;- as.raster(readPNG(imgpath))</span></span>
+<span id="cb25-283"><a href="#cb25-283" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
+<span id="cb25-284"><a href="#cb25-284" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-285"><a href="#cb25-285" aria-hidden="true" tabindex="-1"></a><span class="in">op &lt;- par(no.readonly = TRUE)</span></span>
+<span id="cb25-286"><a href="#cb25-286" aria-hidden="true" tabindex="-1"></a><span class="in">par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))</span></span>
+<span id="cb25-287"><a href="#cb25-287" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-288"><a href="#cb25-288" aria-hidden="true" tabindex="-1"></a><span class="in">plot.new()</span></span>
+<span id="cb25-289"><a href="#cb25-289" aria-hidden="true" tabindex="-1"></a><span class="in">if (!is.null(img_r)) {</span></span>
+<span id="cb25-290"><a href="#cb25-290" aria-hidden="true" tabindex="-1"></a><span class="in">  rasterImage(img_r, 0, 0, 1, 1)</span></span>
+<span id="cb25-291"><a href="#cb25-291" aria-hidden="true" tabindex="-1"></a><span class="in">} else {</span></span>
+<span id="cb25-292"><a href="#cb25-292" aria-hidden="true" tabindex="-1"></a><span class="in">  text(0.5, 0.5, "Image not available")</span></span>
+<span id="cb25-293"><a href="#cb25-293" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
+<span id="cb25-294"><a href="#cb25-294" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-295"><a href="#cb25-295" aria-hidden="true" tabindex="-1"></a><span class="in">XY &lt;- cbind(tr$eye_x, -tr$eye_y)</span></span>
+<span id="cb25-296"><a href="#cb25-296" aria-hidden="true" tabindex="-1"></a><span class="in">plot(XY[, 1], XY[, 2], type = "l", lwd = 2, col = "blue", xlab = "X [px]", ylab = "-Y [px]")</span></span>
+<span id="cb25-297"><a href="#cb25-297" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-298"><a href="#cb25-298" aria-hidden="true" tabindex="-1"></a><span class="in">plot(tr$timestamp, XY[, 1], type = "l", lwd = 2, col = "red",</span></span>
+<span id="cb25-299"><a href="#cb25-299" aria-hidden="true" tabindex="-1"></a><span class="in">     xlab = "Time from image onset [ms]", ylab = "Position [px]", ylim=range(XY))</span></span>
+<span id="cb25-300"><a href="#cb25-300" aria-hidden="true" tabindex="-1"></a><span class="in">lines(tr$timestamp, XY[, 2], lwd = 2, col = "blue")</span></span>
+<span id="cb25-301"><a href="#cb25-301" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-302"><a href="#cb25-302" aria-hidden="true" tabindex="-1"></a><span class="in">par(op)</span></span>
+<span id="cb25-303"><a href="#cb25-303" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb25-304"><a href="#cb25-304" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-307"><a href="#cb25-307" aria-hidden="true" tabindex="-1"></a><span class="in">```{r}</span></span>
-<span id="cb25-308"><a href="#cb25-308" aria-hidden="true" tabindex="-1"></a><span class="co"># select trial</span></span>
-<span id="cb25-309"><a href="#cb25-309" aria-hidden="true" tabindex="-1"></a>t <span class="ot">&lt;-</span> <span class="dv">2</span></span>
-<span id="cb25-310"><a href="#cb25-310" aria-hidden="true" tabindex="-1"></a>tr <span class="ot">&lt;-</span> ds2<span class="sc">$</span>trial[[t]]</span>
-<span id="cb25-311"><a href="#cb25-311" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-312"><a href="#cb25-312" aria-hidden="true" tabindex="-1"></a>SAMPRATE <span class="ot">&lt;-</span> <span class="dv">1000</span></span>
-<span id="cb25-313"><a href="#cb25-313" aria-hidden="true" tabindex="-1"></a>velSD <span class="ot">&lt;-</span> <span class="dv">5</span></span>
-<span id="cb25-314"><a href="#cb25-314" aria-hidden="true" tabindex="-1"></a>minDur <span class="ot">&lt;-</span> <span class="dv">8</span></span>
-<span id="cb25-315"><a href="#cb25-315" aria-hidden="true" tabindex="-1"></a>VELTYPE <span class="ot">&lt;-</span> <span class="dv">2</span></span>
-<span id="cb25-316"><a href="#cb25-316" aria-hidden="true" tabindex="-1"></a>mergeInt <span class="ot">&lt;-</span> <span class="dv">10</span></span>
-<span id="cb25-317"><a href="#cb25-317" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-318"><a href="#cb25-318" aria-hidden="true" tabindex="-1"></a>XY <span class="ot">&lt;-</span> <span class="fu">cbind</span>(tr<span class="sc">$</span>eye_x, tr<span class="sc">$</span>eye_y)</span>
+<span id="cb25-305"><a href="#cb25-305" aria-hidden="true" tabindex="-1"></a><span class="fu">## Activity 6 - Saccade detection (Engbert and Mergenthaler)</span></span>
+<span id="cb25-306"><a href="#cb25-306" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-309"><a href="#cb25-309" aria-hidden="true" tabindex="-1"></a><span class="in">```{r}</span></span>
+<span id="cb25-310"><a href="#cb25-310" aria-hidden="true" tabindex="-1"></a><span class="co"># select trial</span></span>
+<span id="cb25-311"><a href="#cb25-311" aria-hidden="true" tabindex="-1"></a>t <span class="ot">&lt;-</span> <span class="dv">2</span></span>
+<span id="cb25-312"><a href="#cb25-312" aria-hidden="true" tabindex="-1"></a>tr <span class="ot">&lt;-</span> ds2<span class="sc">$</span>trial[[t]]</span>
+<span id="cb25-313"><a href="#cb25-313" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-314"><a href="#cb25-314" aria-hidden="true" tabindex="-1"></a>SAMPRATE <span class="ot">&lt;-</span> <span class="dv">1000</span></span>
+<span id="cb25-315"><a href="#cb25-315" aria-hidden="true" tabindex="-1"></a>velSD <span class="ot">&lt;-</span> <span class="dv">5</span></span>
+<span id="cb25-316"><a href="#cb25-316" aria-hidden="true" tabindex="-1"></a>minDur <span class="ot">&lt;-</span> <span class="dv">8</span></span>
+<span id="cb25-317"><a href="#cb25-317" aria-hidden="true" tabindex="-1"></a>VELTYPE <span class="ot">&lt;-</span> <span class="dv">2</span></span>
+<span id="cb25-318"><a href="#cb25-318" aria-hidden="true" tabindex="-1"></a>mergeInt <span class="ot">&lt;-</span> <span class="dv">10</span></span>
 <span id="cb25-319"><a href="#cb25-319" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-320"><a href="#cb25-320" aria-hidden="true" tabindex="-1"></a><span class="co"># Convert from screen pixels to visual degrees (centered coordinates)</span></span>
-<span id="cb25-321"><a href="#cb25-321" aria-hidden="true" tabindex="-1"></a>xrsf <span class="ot">&lt;-</span> (<span class="dv">1</span> <span class="sc">/</span> ppd) <span class="sc">*</span> <span class="fu">cbind</span>(XY[, <span class="dv">1</span>] <span class="sc">-</span> scr<span class="sc">$</span>xCenter, scr<span class="sc">$</span>yCenter <span class="sc">-</span> XY[, <span class="dv">2</span>])</span>
-<span id="cb25-322"><a href="#cb25-322" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-323"><a href="#cb25-323" aria-hidden="true" tabindex="-1"></a><span class="co"># Smooth position traces for nicer plotting</span></span>
-<span id="cb25-324"><a href="#cb25-324" aria-hidden="true" tabindex="-1"></a>xrs <span class="ot">&lt;-</span> <span class="fu">movmean2d</span>(xrsf, <span class="dv">6</span>)</span>
-<span id="cb25-325"><a href="#cb25-325" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-326"><a href="#cb25-326" aria-hidden="true" tabindex="-1"></a><span class="co"># Compute velocities</span></span>
-<span id="cb25-327"><a href="#cb25-327" aria-hidden="true" tabindex="-1"></a>vrs <span class="ot">&lt;-</span> <span class="fu">vecvel</span>(xrs, SAMPRATE, VELTYPE)</span>
-<span id="cb25-328"><a href="#cb25-328" aria-hidden="true" tabindex="-1"></a>vrsf <span class="ot">&lt;-</span> <span class="fu">vecvel</span>(xrsf, SAMPRATE, VELTYPE)</span>
-<span id="cb25-329"><a href="#cb25-329" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-330"><a href="#cb25-330" aria-hidden="true" tabindex="-1"></a><span class="co"># Detect saccades and derive parameters</span></span>
-<span id="cb25-331"><a href="#cb25-331" aria-hidden="true" tabindex="-1"></a>ms <span class="ot">&lt;-</span> <span class="fu">microsacc_merge</span>(xrsf, vrsf, velSD, minDur, mergeInt)</span>
-<span id="cb25-332"><a href="#cb25-332" aria-hidden="true" tabindex="-1"></a>mrs <span class="ot">&lt;-</span> <span class="fu">saccpar</span>(ms<span class="sc">$</span>msac)</span>
-<span id="cb25-333"><a href="#cb25-333" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-334"><a href="#cb25-334" aria-hidden="true" tabindex="-1"></a>mrs</span>
-<span id="cb25-335"><a href="#cb25-335" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb25-336"><a href="#cb25-336" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-337"><a href="#cb25-337" aria-hidden="true" tabindex="-1"></a><span class="fu">## Activity 7 - Position/velocity traces with highlighted saccades</span></span>
+<span id="cb25-320"><a href="#cb25-320" aria-hidden="true" tabindex="-1"></a>XY <span class="ot">&lt;-</span> <span class="fu">cbind</span>(tr<span class="sc">$</span>eye_x, tr<span class="sc">$</span>eye_y)</span>
+<span id="cb25-321"><a href="#cb25-321" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-322"><a href="#cb25-322" aria-hidden="true" tabindex="-1"></a><span class="co"># Convert from screen pixels to visual degrees (centered coordinates)</span></span>
+<span id="cb25-323"><a href="#cb25-323" aria-hidden="true" tabindex="-1"></a>xrsf <span class="ot">&lt;-</span> (<span class="dv">1</span> <span class="sc">/</span> ppd) <span class="sc">*</span> <span class="fu">cbind</span>(XY[, <span class="dv">1</span>] <span class="sc">-</span> scr<span class="sc">$</span>xCenter, scr<span class="sc">$</span>yCenter <span class="sc">-</span> XY[, <span class="dv">2</span>])</span>
+<span id="cb25-324"><a href="#cb25-324" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-325"><a href="#cb25-325" aria-hidden="true" tabindex="-1"></a><span class="co"># Smooth position traces for nicer plotting</span></span>
+<span id="cb25-326"><a href="#cb25-326" aria-hidden="true" tabindex="-1"></a>xrs <span class="ot">&lt;-</span> <span class="fu">movmean2d</span>(xrsf, <span class="dv">6</span>)</span>
+<span id="cb25-327"><a href="#cb25-327" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-328"><a href="#cb25-328" aria-hidden="true" tabindex="-1"></a><span class="co"># Compute velocities</span></span>
+<span id="cb25-329"><a href="#cb25-329" aria-hidden="true" tabindex="-1"></a>vrs <span class="ot">&lt;-</span> <span class="fu">vecvel</span>(xrs, SAMPRATE, VELTYPE)</span>
+<span id="cb25-330"><a href="#cb25-330" aria-hidden="true" tabindex="-1"></a>vrsf <span class="ot">&lt;-</span> <span class="fu">vecvel</span>(xrsf, SAMPRATE, VELTYPE)</span>
+<span id="cb25-331"><a href="#cb25-331" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-332"><a href="#cb25-332" aria-hidden="true" tabindex="-1"></a><span class="co"># Detect saccades and derive parameters</span></span>
+<span id="cb25-333"><a href="#cb25-333" aria-hidden="true" tabindex="-1"></a>ms <span class="ot">&lt;-</span> <span class="fu">microsacc_merge</span>(xrsf, vrsf, velSD, minDur, mergeInt)</span>
+<span id="cb25-334"><a href="#cb25-334" aria-hidden="true" tabindex="-1"></a>mrs <span class="ot">&lt;-</span> <span class="fu">saccpar</span>(ms<span class="sc">$</span>msac)</span>
+<span id="cb25-335"><a href="#cb25-335" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-336"><a href="#cb25-336" aria-hidden="true" tabindex="-1"></a>mrs</span>
+<span id="cb25-337"><a href="#cb25-337" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb25-338"><a href="#cb25-338" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-339"><a href="#cb25-339" aria-hidden="true" tabindex="-1"></a><span class="in">```{r, fig.align='center', fig.width=8, fig.height=6}</span></span>
-<span id="cb25-340"><a href="#cb25-340" aria-hidden="true" tabindex="-1"></a><span class="in">timers &lt;- as.numeric(tr$timestamp)</span></span>
-<span id="cb25-341"><a href="#cb25-341" aria-hidden="true" tabindex="-1"></a><span class="in">time_sec &lt;- (timers - timers[1] + 1) / 1000</span></span>
-<span id="cb25-342"><a href="#cb25-342" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-343"><a href="#cb25-343" aria-hidden="true" tabindex="-1"></a><span class="in">op &lt;- par(no.readonly = TRUE)</span></span>
-<span id="cb25-344"><a href="#cb25-344" aria-hidden="true" tabindex="-1"></a><span class="in">par(mfrow = c(2, 1), mar = c(4, 4, 2, 1))</span></span>
-<span id="cb25-345"><a href="#cb25-345" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-346"><a href="#cb25-346" aria-hidden="true" tabindex="-1"></a><span class="in">ylim_pos &lt;- max(abs(xrs), na.rm = TRUE)</span></span>
-<span id="cb25-347"><a href="#cb25-347" aria-hidden="true" tabindex="-1"></a><span class="in">plot(time_sec, xrs[, 1], type = "l", col = rgb(0.8, 0, 0), lwd = 1,</span></span>
-<span id="cb25-348"><a href="#cb25-348" aria-hidden="true" tabindex="-1"></a><span class="in">     xlab = "", ylab = "position [deg]", ylim = c(-ylim_pos, ylim_pos))</span></span>
-<span id="cb25-349"><a href="#cb25-349" aria-hidden="true" tabindex="-1"></a><span class="in">lines(time_sec, xrs[, 2], col = rgb(0.2, 0.2, 0.8), lwd = 1)</span></span>
+<span id="cb25-339"><a href="#cb25-339" aria-hidden="true" tabindex="-1"></a>**Meaning of output variables from `saccpar()`**</span>
+<span id="cb25-340"><a href="#cb25-340" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-341"><a href="#cb25-341" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`a`</span>      : Start sample index of the saccade (first threshold-crossing sample).</span>
+<span id="cb25-342"><a href="#cb25-342" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`b`</span>      : End sample index of the saccade (last sample belonging to the event).</span>
+<span id="cb25-343"><a href="#cb25-343" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`d`</span>      : Duration in samples $(b - a + 1)$. Convert to ms via d / sampling_rate * 1000.</span>
+<span id="cb25-344"><a href="#cb25-344" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`vpeak`</span>  : Peak velocity magnitude ($\max \sqrt{v_x^2 + v_y^2}$) within the saccade.</span>
+<span id="cb25-345"><a href="#cb25-345" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`dist`</span>   : Straight-line displacement magnitude between start and end positions: $\sqrt{(x_b - x_a)^2 + (y_b - y_a)^2}$.</span>
+<span id="cb25-346"><a href="#cb25-346" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`angd`</span>   : Direction of straight-line displacement (radians), computed with $\text{atan2}(d_y, d_x)$.</span>
+<span id="cb25-347"><a href="#cb25-347" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`ampl`</span>   : Trajectory amplitude based on signed position ranges within the saccade; reflects full movement excursion and may exceed dist for curved paths.</span>
+<span id="cb25-348"><a href="#cb25-348" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`anga`</span>   : Direction of trajectory range vector (radians), computed with $\text{atan2}(\text{range}_y, \text{range}_x)$.</span>
+<span id="cb25-349"><a href="#cb25-349" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb25-350"><a href="#cb25-350" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-351"><a href="#cb25-351" aria-hidden="true" tabindex="-1"></a><span class="in">if (nrow(mrs) &gt; 0) {</span></span>
-<span id="cb25-352"><a href="#cb25-352" aria-hidden="true" tabindex="-1"></a><span class="in">  for (i in seq_len(nrow(mrs))) {</span></span>
-<span id="cb25-353"><a href="#cb25-353" aria-hidden="true" tabindex="-1"></a><span class="in">    idx &lt;- mrs[i, 1]:mrs[i, 2]</span></span>
-<span id="cb25-354"><a href="#cb25-354" aria-hidden="true" tabindex="-1"></a><span class="in">    lines(time_sec[idx], xrs[idx, 1], col = rgb(0.8, 0, 0), lwd = 3)</span></span>
-<span id="cb25-355"><a href="#cb25-355" aria-hidden="true" tabindex="-1"></a><span class="in">    lines(time_sec[idx], xrs[idx, 2], col = rgb(0, 0, 0.8), lwd = 3)</span></span>
-<span id="cb25-356"><a href="#cb25-356" aria-hidden="true" tabindex="-1"></a><span class="in">  }</span></span>
-<span id="cb25-357"><a href="#cb25-357" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
-<span id="cb25-358"><a href="#cb25-358" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-359"><a href="#cb25-359" aria-hidden="true" tabindex="-1"></a><span class="in">ylim_vel &lt;- max(abs(vrs), na.rm = TRUE)</span></span>
-<span id="cb25-360"><a href="#cb25-360" aria-hidden="true" tabindex="-1"></a><span class="in">plot(time_sec, vrs[, 1], type = "l", col = rgb(0.8, 0, 0), lwd = 1,</span></span>
-<span id="cb25-361"><a href="#cb25-361" aria-hidden="true" tabindex="-1"></a><span class="in">     xlab = "time [sec]", ylab = "velocity [deg/sec]", ylim = c(-ylim_vel, ylim_vel))</span></span>
-<span id="cb25-362"><a href="#cb25-362" aria-hidden="true" tabindex="-1"></a><span class="in">lines(time_sec, vrs[, 2], col = rgb(0.2, 0.2, 0.8), lwd = 1)</span></span>
-<span id="cb25-363"><a href="#cb25-363" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-364"><a href="#cb25-364" aria-hidden="true" tabindex="-1"></a><span class="in">if (nrow(mrs) &gt; 0) {</span></span>
-<span id="cb25-365"><a href="#cb25-365" aria-hidden="true" tabindex="-1"></a><span class="in">  for (i in seq_len(nrow(mrs))) {</span></span>
-<span id="cb25-366"><a href="#cb25-366" aria-hidden="true" tabindex="-1"></a><span class="in">    idx &lt;- mrs[i, 1]:mrs[i, 2]</span></span>
-<span id="cb25-367"><a href="#cb25-367" aria-hidden="true" tabindex="-1"></a><span class="in">    lines(time_sec[idx], vrs[idx, 1], col = rgb(0.8, 0, 0), lwd = 3)</span></span>
-<span id="cb25-368"><a href="#cb25-368" aria-hidden="true" tabindex="-1"></a><span class="in">    lines(time_sec[idx], vrs[idx, 2], col = rgb(0, 0, 0.8), lwd = 3)</span></span>
-<span id="cb25-369"><a href="#cb25-369" aria-hidden="true" tabindex="-1"></a><span class="in">  }</span></span>
-<span id="cb25-370"><a href="#cb25-370" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
-<span id="cb25-371"><a href="#cb25-371" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-372"><a href="#cb25-372" aria-hidden="true" tabindex="-1"></a><span class="in">par(op)</span></span>
-<span id="cb25-373"><a href="#cb25-373" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb25-374"><a href="#cb25-374" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-375"><a href="#cb25-375" aria-hidden="true" tabindex="-1"></a><span class="fu">## Activity 8 - Scanpath on top of image + fixation table</span></span>
-<span id="cb25-376"><a href="#cb25-376" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-379"><a href="#cb25-379" aria-hidden="true" tabindex="-1"></a><span class="in">```{r}</span></span>
-<span id="cb25-380"><a href="#cb25-380" aria-hidden="true" tabindex="-1"></a><span class="co"># Fixations are intervals between saccades</span></span>
-<span id="cb25-381"><a href="#cb25-381" aria-hidden="true" tabindex="-1"></a>n_fix <span class="ot">&lt;-</span> <span class="fu">nrow</span>(mrs) <span class="sc">+</span> <span class="dv">1</span></span>
-<span id="cb25-382"><a href="#cb25-382" aria-hidden="true" tabindex="-1"></a>fixtab <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, n_fix, <span class="dv">5</span>)</span>
-<span id="cb25-383"><a href="#cb25-383" aria-hidden="true" tabindex="-1"></a><span class="fu">colnames</span>(fixtab) <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"fix_start"</span>, <span class="st">"fix_end"</span>, <span class="st">"fix_dur"</span>, <span class="st">"fix_x"</span>, <span class="st">"fix_y"</span>)</span>
-<span id="cb25-384"><a href="#cb25-384" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-385"><a href="#cb25-385" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="fu">seq_len</span>(n_fix)) {</span>
-<span id="cb25-386"><a href="#cb25-386" aria-hidden="true" tabindex="-1"></a>  fix_start <span class="ot">&lt;-</span> <span class="cf">if</span> (i <span class="sc">==</span> <span class="dv">1</span>) <span class="dv">1</span> <span class="cf">else</span> mrs[i <span class="sc">-</span> <span class="dv">1</span>, <span class="dv">2</span>] <span class="sc">+</span> <span class="dv">1</span></span>
-<span id="cb25-387"><a href="#cb25-387" aria-hidden="true" tabindex="-1"></a>  fix_end <span class="ot">&lt;-</span> <span class="cf">if</span> (i <span class="sc">==</span> n_fix) <span class="fu">length</span>(tr<span class="sc">$</span>timestamp) <span class="cf">else</span> mrs[i, <span class="dv">1</span>] <span class="sc">-</span> <span class="dv">1</span></span>
-<span id="cb25-388"><a href="#cb25-388" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-389"><a href="#cb25-389" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (fix_end <span class="sc">&lt;</span> fix_start) <span class="cf">next</span></span>
-<span id="cb25-390"><a href="#cb25-390" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-391"><a href="#cb25-391" aria-hidden="true" tabindex="-1"></a>  fix_dur <span class="ot">&lt;-</span> fix_end <span class="sc">-</span> fix_start</span>
-<span id="cb25-392"><a href="#cb25-392" aria-hidden="true" tabindex="-1"></a>  fix_xy <span class="ot">&lt;-</span> <span class="fu">c</span>(</span>
-<span id="cb25-393"><a href="#cb25-393" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mean</span>(xrs[fix_start<span class="sc">:</span>fix_end, <span class="dv">1</span>], <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb25-394"><a href="#cb25-394" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mean</span>(xrs[fix_start<span class="sc">:</span>fix_end, <span class="dv">2</span>], <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb25-395"><a href="#cb25-395" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb25-396"><a href="#cb25-396" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-397"><a href="#cb25-397" aria-hidden="true" tabindex="-1"></a>  fixtab[i, ] <span class="ot">&lt;-</span> <span class="fu">c</span>(fix_start, fix_end, fix_dur, fix_xy)</span>
-<span id="cb25-398"><a href="#cb25-398" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb25-351"><a href="#cb25-351" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-352"><a href="#cb25-352" aria-hidden="true" tabindex="-1"></a><span class="fu">## Activity 7 - Position/velocity traces with highlighted saccades</span></span>
+<span id="cb25-353"><a href="#cb25-353" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-354"><a href="#cb25-354" aria-hidden="true" tabindex="-1"></a><span class="in">```{r, fig.align='center', fig.width=8, fig.height=6}</span></span>
+<span id="cb25-355"><a href="#cb25-355" aria-hidden="true" tabindex="-1"></a><span class="in">timers &lt;- as.numeric(tr$timestamp)</span></span>
+<span id="cb25-356"><a href="#cb25-356" aria-hidden="true" tabindex="-1"></a><span class="in">time_sec &lt;- (timers - timers[1] + 1) / 1000</span></span>
+<span id="cb25-357"><a href="#cb25-357" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-358"><a href="#cb25-358" aria-hidden="true" tabindex="-1"></a><span class="in">op &lt;- par(no.readonly = TRUE)</span></span>
+<span id="cb25-359"><a href="#cb25-359" aria-hidden="true" tabindex="-1"></a><span class="in">par(mfrow = c(2, 1), mar = c(4, 4, 2, 1))</span></span>
+<span id="cb25-360"><a href="#cb25-360" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-361"><a href="#cb25-361" aria-hidden="true" tabindex="-1"></a><span class="in">ylim_pos &lt;- max(abs(xrs), na.rm = TRUE)</span></span>
+<span id="cb25-362"><a href="#cb25-362" aria-hidden="true" tabindex="-1"></a><span class="in">plot(time_sec, xrs[, 1], type = "l", col = rgb(0.8, 0, 0), lwd = 1,</span></span>
+<span id="cb25-363"><a href="#cb25-363" aria-hidden="true" tabindex="-1"></a><span class="in">     xlab = "", ylab = "position [deg]", ylim = c(-ylim_pos, ylim_pos))</span></span>
+<span id="cb25-364"><a href="#cb25-364" aria-hidden="true" tabindex="-1"></a><span class="in">lines(time_sec, xrs[, 2], col = rgb(0.2, 0.2, 0.8), lwd = 1)</span></span>
+<span id="cb25-365"><a href="#cb25-365" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-366"><a href="#cb25-366" aria-hidden="true" tabindex="-1"></a><span class="in">if (nrow(mrs) &gt; 0) {</span></span>
+<span id="cb25-367"><a href="#cb25-367" aria-hidden="true" tabindex="-1"></a><span class="in">  for (i in seq_len(nrow(mrs))) {</span></span>
+<span id="cb25-368"><a href="#cb25-368" aria-hidden="true" tabindex="-1"></a><span class="in">    idx &lt;- mrs[i, 1]:mrs[i, 2]</span></span>
+<span id="cb25-369"><a href="#cb25-369" aria-hidden="true" tabindex="-1"></a><span class="in">    lines(time_sec[idx], xrs[idx, 1], col = rgb(0.8, 0, 0), lwd = 3)</span></span>
+<span id="cb25-370"><a href="#cb25-370" aria-hidden="true" tabindex="-1"></a><span class="in">    lines(time_sec[idx], xrs[idx, 2], col = rgb(0, 0, 0.8), lwd = 3)</span></span>
+<span id="cb25-371"><a href="#cb25-371" aria-hidden="true" tabindex="-1"></a><span class="in">  }</span></span>
+<span id="cb25-372"><a href="#cb25-372" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
+<span id="cb25-373"><a href="#cb25-373" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-374"><a href="#cb25-374" aria-hidden="true" tabindex="-1"></a><span class="in">ylim_vel &lt;- max(abs(vrs), na.rm = TRUE)</span></span>
+<span id="cb25-375"><a href="#cb25-375" aria-hidden="true" tabindex="-1"></a><span class="in">plot(time_sec, vrs[, 1], type = "l", col = rgb(0.8, 0, 0), lwd = 1,</span></span>
+<span id="cb25-376"><a href="#cb25-376" aria-hidden="true" tabindex="-1"></a><span class="in">     xlab = "time [sec]", ylab = "velocity [deg/sec]", ylim = c(-ylim_vel, ylim_vel))</span></span>
+<span id="cb25-377"><a href="#cb25-377" aria-hidden="true" tabindex="-1"></a><span class="in">lines(time_sec, vrs[, 2], col = rgb(0.2, 0.2, 0.8), lwd = 1)</span></span>
+<span id="cb25-378"><a href="#cb25-378" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-379"><a href="#cb25-379" aria-hidden="true" tabindex="-1"></a><span class="in">if (nrow(mrs) &gt; 0) {</span></span>
+<span id="cb25-380"><a href="#cb25-380" aria-hidden="true" tabindex="-1"></a><span class="in">  for (i in seq_len(nrow(mrs))) {</span></span>
+<span id="cb25-381"><a href="#cb25-381" aria-hidden="true" tabindex="-1"></a><span class="in">    idx &lt;- mrs[i, 1]:mrs[i, 2]</span></span>
+<span id="cb25-382"><a href="#cb25-382" aria-hidden="true" tabindex="-1"></a><span class="in">    lines(time_sec[idx], vrs[idx, 1], col = rgb(0.8, 0, 0), lwd = 3)</span></span>
+<span id="cb25-383"><a href="#cb25-383" aria-hidden="true" tabindex="-1"></a><span class="in">    lines(time_sec[idx], vrs[idx, 2], col = rgb(0, 0, 0.8), lwd = 3)</span></span>
+<span id="cb25-384"><a href="#cb25-384" aria-hidden="true" tabindex="-1"></a><span class="in">  }</span></span>
+<span id="cb25-385"><a href="#cb25-385" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
+<span id="cb25-386"><a href="#cb25-386" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-387"><a href="#cb25-387" aria-hidden="true" tabindex="-1"></a><span class="in">par(op)</span></span>
+<span id="cb25-388"><a href="#cb25-388" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb25-389"><a href="#cb25-389" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-390"><a href="#cb25-390" aria-hidden="true" tabindex="-1"></a><span class="fu">## Activity 8 - Scanpath on top of image + fixation table</span></span>
+<span id="cb25-391"><a href="#cb25-391" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-394"><a href="#cb25-394" aria-hidden="true" tabindex="-1"></a><span class="in">```{r}</span></span>
+<span id="cb25-395"><a href="#cb25-395" aria-hidden="true" tabindex="-1"></a><span class="co"># Fixations are intervals between saccades</span></span>
+<span id="cb25-396"><a href="#cb25-396" aria-hidden="true" tabindex="-1"></a>n_fix <span class="ot">&lt;-</span> <span class="fu">nrow</span>(mrs) <span class="sc">+</span> <span class="dv">1</span></span>
+<span id="cb25-397"><a href="#cb25-397" aria-hidden="true" tabindex="-1"></a>fixtab <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, n_fix, <span class="dv">5</span>)</span>
+<span id="cb25-398"><a href="#cb25-398" aria-hidden="true" tabindex="-1"></a><span class="fu">colnames</span>(fixtab) <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"fix_start"</span>, <span class="st">"fix_end"</span>, <span class="st">"fix_dur"</span>, <span class="st">"fix_x"</span>, <span class="st">"fix_y"</span>)</span>
 <span id="cb25-399"><a href="#cb25-399" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-400"><a href="#cb25-400" aria-hidden="true" tabindex="-1"></a>fixtab</span>
-<span id="cb25-401"><a href="#cb25-401" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb25-402"><a href="#cb25-402" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-403"><a href="#cb25-403" aria-hidden="true" tabindex="-1"></a><span class="in">```{r, fig.align='center', fig.width=6.5, fig.height=5.5}</span></span>
-<span id="cb25-404"><a href="#cb25-404" aria-hidden="true" tabindex="-1"></a><span class="in">if (!is.na(tr$fake_image) &amp;&amp; tr$fake_image == 1) {</span></span>
-<span id="cb25-405"><a href="#cb25-405" aria-hidden="true" tabindex="-1"></a><span class="in">  imgpath &lt;- file.path(".", "img", "fake", tr$img_name)</span></span>
-<span id="cb25-406"><a href="#cb25-406" aria-hidden="true" tabindex="-1"></a><span class="in">} else {</span></span>
-<span id="cb25-407"><a href="#cb25-407" aria-hidden="true" tabindex="-1"></a><span class="in">  imgpath &lt;- file.path(".", "img", "real", tr$img_name)</span></span>
-<span id="cb25-408"><a href="#cb25-408" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
-<span id="cb25-409"><a href="#cb25-409" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-410"><a href="#cb25-410" aria-hidden="true" tabindex="-1"></a><span class="in">img_r &lt;- NULL</span></span>
-<span id="cb25-411"><a href="#cb25-411" aria-hidden="true" tabindex="-1"></a><span class="in">if (!is.na(tr$img_name) &amp;&amp; file.exists(imgpath)) {</span></span>
-<span id="cb25-412"><a href="#cb25-412" aria-hidden="true" tabindex="-1"></a><span class="in">  img_r &lt;- as.raster(readPNG(imgpath))</span></span>
-<span id="cb25-413"><a href="#cb25-413" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
+<span id="cb25-400"><a href="#cb25-400" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="fu">seq_len</span>(n_fix)) {</span>
+<span id="cb25-401"><a href="#cb25-401" aria-hidden="true" tabindex="-1"></a>  fix_start <span class="ot">&lt;-</span> <span class="cf">if</span> (i <span class="sc">==</span> <span class="dv">1</span>) <span class="dv">1</span> <span class="cf">else</span> mrs[i <span class="sc">-</span> <span class="dv">1</span>, <span class="dv">2</span>] <span class="sc">+</span> <span class="dv">1</span></span>
+<span id="cb25-402"><a href="#cb25-402" aria-hidden="true" tabindex="-1"></a>  fix_end <span class="ot">&lt;-</span> <span class="cf">if</span> (i <span class="sc">==</span> n_fix) <span class="fu">length</span>(tr<span class="sc">$</span>timestamp) <span class="cf">else</span> mrs[i, <span class="dv">1</span>] <span class="sc">-</span> <span class="dv">1</span></span>
+<span id="cb25-403"><a href="#cb25-403" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-404"><a href="#cb25-404" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (fix_end <span class="sc">&lt;</span> fix_start) <span class="cf">next</span></span>
+<span id="cb25-405"><a href="#cb25-405" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-406"><a href="#cb25-406" aria-hidden="true" tabindex="-1"></a>  fix_dur <span class="ot">&lt;-</span> fix_end <span class="sc">-</span> fix_start</span>
+<span id="cb25-407"><a href="#cb25-407" aria-hidden="true" tabindex="-1"></a>  fix_xy <span class="ot">&lt;-</span> <span class="fu">c</span>(</span>
+<span id="cb25-408"><a href="#cb25-408" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mean</span>(xrs[fix_start<span class="sc">:</span>fix_end, <span class="dv">1</span>], <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb25-409"><a href="#cb25-409" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mean</span>(xrs[fix_start<span class="sc">:</span>fix_end, <span class="dv">2</span>], <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb25-410"><a href="#cb25-410" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb25-411"><a href="#cb25-411" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-412"><a href="#cb25-412" aria-hidden="true" tabindex="-1"></a>  fixtab[i, ] <span class="ot">&lt;-</span> <span class="fu">c</span>(fix_start, fix_end, fix_dur, fix_xy)</span>
+<span id="cb25-413"><a href="#cb25-413" aria-hidden="true" tabindex="-1"></a>}</span>
 <span id="cb25-414"><a href="#cb25-414" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-415"><a href="#cb25-415" aria-hidden="true" tabindex="-1"></a><span class="in">display_x &lt;- c(-(scr$xres / 2) / ppd, (scr$xres / 2) / ppd)</span></span>
-<span id="cb25-416"><a href="#cb25-416" aria-hidden="true" tabindex="-1"></a><span class="in">display_y &lt;- c(-(scr$yres / 2) / ppd, (scr$yres / 2) / ppd)</span></span>
+<span id="cb25-415"><a href="#cb25-415" aria-hidden="true" tabindex="-1"></a>fixtab</span>
+<span id="cb25-416"><a href="#cb25-416" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb25-417"><a href="#cb25-417" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-418"><a href="#cb25-418" aria-hidden="true" tabindex="-1"></a><span class="in"># resize figure</span></span>
-<span id="cb25-419"><a href="#cb25-419" aria-hidden="true" tabindex="-1"></a><span class="in">display_x &lt;- display_x * 0.6</span></span>
-<span id="cb25-420"><a href="#cb25-420" aria-hidden="true" tabindex="-1"></a><span class="in">display_y &lt;- display_y * 0.6</span></span>
-<span id="cb25-421"><a href="#cb25-421" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-422"><a href="#cb25-422" aria-hidden="true" tabindex="-1"></a><span class="in">plot(NA, NA, xlim = display_x, ylim = display_y, xlab = "X [deg]", ylab = "Y [deg]", asp = 1)</span></span>
-<span id="cb25-423"><a href="#cb25-423" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-424"><a href="#cb25-424" aria-hidden="true" tabindex="-1"></a><span class="in">if (!is.null(img_r) &amp;&amp; !any(is.na(tr$imgRect))) {</span></span>
-<span id="cb25-425"><a href="#cb25-425" aria-hidden="true" tabindex="-1"></a><span class="in">  img_x1 &lt;- (tr$imgRect[1] - scr$xCenter) / ppd</span></span>
-<span id="cb25-426"><a href="#cb25-426" aria-hidden="true" tabindex="-1"></a><span class="in">  img_x2 &lt;- (tr$imgRect[3] - scr$xCenter) / ppd</span></span>
-<span id="cb25-427"><a href="#cb25-427" aria-hidden="true" tabindex="-1"></a><span class="in">  img_y1 &lt;- (scr$yCenter - tr$imgRect[2]) / ppd</span></span>
-<span id="cb25-428"><a href="#cb25-428" aria-hidden="true" tabindex="-1"></a><span class="in">  img_y2 &lt;- (scr$yCenter - tr$imgRect[4]) / ppd</span></span>
-<span id="cb25-429"><a href="#cb25-429" aria-hidden="true" tabindex="-1"></a><span class="in">  rasterImage(img_r, img_x1, img_y2, img_x2, img_y1)</span></span>
-<span id="cb25-430"><a href="#cb25-430" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
-<span id="cb25-431"><a href="#cb25-431" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-432"><a href="#cb25-432" aria-hidden="true" tabindex="-1"></a><span class="in">lines(xrs[, 1], xrs[, 2], col = "black")</span></span>
-<span id="cb25-433"><a href="#cb25-433" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-434"><a href="#cb25-434" aria-hidden="true" tabindex="-1"></a><span class="in">if (nrow(mrs) &gt; 0) {</span></span>
-<span id="cb25-435"><a href="#cb25-435" aria-hidden="true" tabindex="-1"></a><span class="in">  for (i in seq_len(nrow(mrs))) {</span></span>
-<span id="cb25-436"><a href="#cb25-436" aria-hidden="true" tabindex="-1"></a><span class="in">    idx &lt;- mrs[i, 1]:mrs[i, 2]</span></span>
-<span id="cb25-437"><a href="#cb25-437" aria-hidden="true" tabindex="-1"></a><span class="in">    lines(xrs[idx, 1], xrs[idx, 2], col = "blue", lwd = 2)</span></span>
-<span id="cb25-438"><a href="#cb25-438" aria-hidden="true" tabindex="-1"></a><span class="in">  }</span></span>
-<span id="cb25-439"><a href="#cb25-439" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
-<span id="cb25-440"><a href="#cb25-440" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-441"><a href="#cb25-441" aria-hidden="true" tabindex="-1"></a><span class="in">for (i in seq_len(n_fix)) {</span></span>
-<span id="cb25-442"><a href="#cb25-442" aria-hidden="true" tabindex="-1"></a><span class="in">  if (any(is.na(fixtab[i, ]))) next</span></span>
-<span id="cb25-443"><a href="#cb25-443" aria-hidden="true" tabindex="-1"></a><span class="in">  points(fixtab[i, "fix_x"], fixtab[i, "fix_y"],</span></span>
-<span id="cb25-444"><a href="#cb25-444" aria-hidden="true" tabindex="-1"></a><span class="in">         pch = 1, col = "blue", cex = max(0.2, fixtab[i, "fix_dur"] / 200))</span></span>
+<span id="cb25-418"><a href="#cb25-418" aria-hidden="true" tabindex="-1"></a><span class="in">```{r, fig.align='center', fig.width=6.5, fig.height=5.5}</span></span>
+<span id="cb25-419"><a href="#cb25-419" aria-hidden="true" tabindex="-1"></a><span class="in">if (!is.na(tr$fake_image) &amp;&amp; tr$fake_image == 1) {</span></span>
+<span id="cb25-420"><a href="#cb25-420" aria-hidden="true" tabindex="-1"></a><span class="in">  imgpath &lt;- file.path(".", "img", "fake", tr$img_name)</span></span>
+<span id="cb25-421"><a href="#cb25-421" aria-hidden="true" tabindex="-1"></a><span class="in">} else {</span></span>
+<span id="cb25-422"><a href="#cb25-422" aria-hidden="true" tabindex="-1"></a><span class="in">  imgpath &lt;- file.path(".", "img", "real", tr$img_name)</span></span>
+<span id="cb25-423"><a href="#cb25-423" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
+<span id="cb25-424"><a href="#cb25-424" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-425"><a href="#cb25-425" aria-hidden="true" tabindex="-1"></a><span class="in">img_r &lt;- NULL</span></span>
+<span id="cb25-426"><a href="#cb25-426" aria-hidden="true" tabindex="-1"></a><span class="in">if (!is.na(tr$img_name) &amp;&amp; file.exists(imgpath)) {</span></span>
+<span id="cb25-427"><a href="#cb25-427" aria-hidden="true" tabindex="-1"></a><span class="in">  img_r &lt;- as.raster(readPNG(imgpath))</span></span>
+<span id="cb25-428"><a href="#cb25-428" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
+<span id="cb25-429"><a href="#cb25-429" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-430"><a href="#cb25-430" aria-hidden="true" tabindex="-1"></a><span class="in">display_x &lt;- c(-(scr$xres / 2) / ppd, (scr$xres / 2) / ppd)</span></span>
+<span id="cb25-431"><a href="#cb25-431" aria-hidden="true" tabindex="-1"></a><span class="in">display_y &lt;- c(-(scr$yres / 2) / ppd, (scr$yres / 2) / ppd)</span></span>
+<span id="cb25-432"><a href="#cb25-432" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-433"><a href="#cb25-433" aria-hidden="true" tabindex="-1"></a><span class="in"># resize figure</span></span>
+<span id="cb25-434"><a href="#cb25-434" aria-hidden="true" tabindex="-1"></a><span class="in">display_x &lt;- display_x * 0.6</span></span>
+<span id="cb25-435"><a href="#cb25-435" aria-hidden="true" tabindex="-1"></a><span class="in">display_y &lt;- display_y * 0.6</span></span>
+<span id="cb25-436"><a href="#cb25-436" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-437"><a href="#cb25-437" aria-hidden="true" tabindex="-1"></a><span class="in">plot(NA, NA, xlim = display_x, ylim = display_y, xlab = "X [deg]", ylab = "Y [deg]", asp = 1)</span></span>
+<span id="cb25-438"><a href="#cb25-438" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-439"><a href="#cb25-439" aria-hidden="true" tabindex="-1"></a><span class="in">if (!is.null(img_r) &amp;&amp; !any(is.na(tr$imgRect))) {</span></span>
+<span id="cb25-440"><a href="#cb25-440" aria-hidden="true" tabindex="-1"></a><span class="in">  img_x1 &lt;- (tr$imgRect[1] - scr$xCenter) / ppd</span></span>
+<span id="cb25-441"><a href="#cb25-441" aria-hidden="true" tabindex="-1"></a><span class="in">  img_x2 &lt;- (tr$imgRect[3] - scr$xCenter) / ppd</span></span>
+<span id="cb25-442"><a href="#cb25-442" aria-hidden="true" tabindex="-1"></a><span class="in">  img_y1 &lt;- (scr$yCenter - tr$imgRect[2]) / ppd</span></span>
+<span id="cb25-443"><a href="#cb25-443" aria-hidden="true" tabindex="-1"></a><span class="in">  img_y2 &lt;- (scr$yCenter - tr$imgRect[4]) / ppd</span></span>
+<span id="cb25-444"><a href="#cb25-444" aria-hidden="true" tabindex="-1"></a><span class="in">  rasterImage(img_r, img_x1, img_y2, img_x2, img_y1)</span></span>
 <span id="cb25-445"><a href="#cb25-445" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
-<span id="cb25-446"><a href="#cb25-446" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb25-447"><a href="#cb25-447" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-448"><a href="#cb25-448" aria-hidden="true" tabindex="-1"></a>Practice tasks:</span>
-<span id="cb25-449"><a href="#cb25-449" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb25-450"><a href="#cb25-450" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> Modify the trial-parsing loop to work with another experiment that uses different message labels.</span>
-<span id="cb25-451"><a href="#cb25-451" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> Re-run the saccade and fixation analysis for different trials.</span>
+<span id="cb25-446"><a href="#cb25-446" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-447"><a href="#cb25-447" aria-hidden="true" tabindex="-1"></a><span class="in">lines(xrs[, 1], xrs[, 2], col = "black")</span></span>
+<span id="cb25-448"><a href="#cb25-448" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-449"><a href="#cb25-449" aria-hidden="true" tabindex="-1"></a><span class="in">if (nrow(mrs) &gt; 0) {</span></span>
+<span id="cb25-450"><a href="#cb25-450" aria-hidden="true" tabindex="-1"></a><span class="in">  for (i in seq_len(nrow(mrs))) {</span></span>
+<span id="cb25-451"><a href="#cb25-451" aria-hidden="true" tabindex="-1"></a><span class="in">    idx &lt;- mrs[i, 1]:mrs[i, 2]</span></span>
+<span id="cb25-452"><a href="#cb25-452" aria-hidden="true" tabindex="-1"></a><span class="in">    lines(xrs[idx, 1], xrs[idx, 2], col = "blue", lwd = 2)</span></span>
+<span id="cb25-453"><a href="#cb25-453" aria-hidden="true" tabindex="-1"></a><span class="in">  }</span></span>
+<span id="cb25-454"><a href="#cb25-454" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
+<span id="cb25-455"><a href="#cb25-455" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-456"><a href="#cb25-456" aria-hidden="true" tabindex="-1"></a><span class="in">for (i in seq_len(n_fix)) {</span></span>
+<span id="cb25-457"><a href="#cb25-457" aria-hidden="true" tabindex="-1"></a><span class="in">  if (any(is.na(fixtab[i, ]))) next</span></span>
+<span id="cb25-458"><a href="#cb25-458" aria-hidden="true" tabindex="-1"></a><span class="in">  points(fixtab[i, "fix_x"], fixtab[i, "fix_y"],</span></span>
+<span id="cb25-459"><a href="#cb25-459" aria-hidden="true" tabindex="-1"></a><span class="in">         pch = 1, col = "blue", cex = max(0.2, fixtab[i, "fix_dur"] / 200))</span></span>
+<span id="cb25-460"><a href="#cb25-460" aria-hidden="true" tabindex="-1"></a><span class="in">}</span></span>
+<span id="cb25-461"><a href="#cb25-461" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb25-462"><a href="#cb25-462" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-463"><a href="#cb25-463" aria-hidden="true" tabindex="-1"></a>Practice tasks:</span>
+<span id="cb25-464"><a href="#cb25-464" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-465"><a href="#cb25-465" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> Re-run the saccade and fixation analysis for different participants and trials.</span>
 </code><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></pre></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
