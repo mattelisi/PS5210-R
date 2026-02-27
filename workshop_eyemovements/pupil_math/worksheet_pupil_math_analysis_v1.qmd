@@ -1,0 +1,378 @@
+---
+title: "Workshop on Eye-Movement Analysis in R: pupil dilation task"
+subtitle: "PS5210 25-26"
+author: "Matteo Lisi"
+format:
+  html:
+    toc: true
+    code-tools: true
+    code-fold: show
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+This worksheet translates the Matlab pupil-analysis workflow into R for the mental arithmetic task.
+
+## Activity 1 - Setup
+
+```{r}
+rm(list = ls())
+
+library(eyelinker)
+source("eyelink_source.R")
+```
+
+## Activity 2 - Task summary
+
+Participants hear two numbers and mentally multiply them. Pupil size increases with cognitive load, so we compare pupil traces across trials and difficulty.
+
+```{r, echo=FALSE, out.width='60%', fig.cap='Average percent increase in pupil diameter as a function of problem difficulty (Hess & Polt, 1964; re-plotted by Ahern & Beatty, 1979).', fig.align='center'}
+knitr::include_graphics("beatty_summary.png")
+```
+
+## Activity 3 - Convert EDF to ASC and import
+
+```{r}
+edf <- "./data/S2301.edf"
+
+# Convert EDF to ASC (overwrite existing ASC if present)
+system2("edf2asc", args = c("-y", edf))
+
+asc <- sub("\\.[Ee][Dd][Ff]$", ".asc", edf)
+dat <- read.asc(asc, parse_all = TRUE)
+
+str(dat)
+```
+
+Inspect the key message types:
+
+```{r}
+head(dat$msg$text, 20)
+
+table(grepl("^TRIAL_START", dat$msg$text))
+table(grepl("^EVENT_FixationDot$", dat$msg$text))
+table(grepl("^EVENT_N1$", dat$msg$text))
+table(grepl("^EVENT_N2$", dat$msg$text))
+table(grepl("^TRIAL_END", dat$msg$text))
+
+head(dat$msg$text[grepl("^TrialData", dat$msg$text)], 6)
+```
+
+## Activity 4 - Parse trials (R version of `ds2.trial`)
+
+We rebuild the trial-wise structure used in Matlab. Each trial will include:
+
+- event times (`t_start`, `t_fix`, `t_N1`, `t_N2`, `t_resp`, `t_end`)
+- task variables (`N1`, `N2`, `response`, `accuracy`, `is_hard`)
+- sample-wise vectors (`timestamp`, `eye_x`, `eye_y`, `pupil_size`)
+
+```{r}
+msg <- dat$msg[order(dat$msg$time), , drop = FALSE]
+raw <- dat$raw[order(dat$raw$time), , drop = FALSE]
+
+# Parse TrialData rows once per trial
+# TrialData format:
+# TrialData <trial_n> <subject> <is_hard> <N1> <N2> <response> <accuracy> ...
+trialdata_map <- list()
+
+for (i in seq_len(nrow(msg))) {
+  text_i <- msg$text[i]
+  if (is.na(text_i) || !grepl("^TrialData", text_i)) next
+
+  tok <- strsplit(trimws(text_i), "\\s+")[[1]]
+  if (length(tok) < 8) next
+
+  tr_n <- suppressWarnings(as.integer(tok[2]))
+  if (is.na(tr_n)) next
+
+  key <- as.character(tr_n)
+  if (is.null(trialdata_map[[key]])) {
+    trialdata_map[[key]] <- list(
+      trial_n = tr_n,
+      subject = tok[3],
+      is_hard = suppressWarnings(as.integer(tok[4])),
+      N1 = suppressWarnings(as.integer(tok[5])),
+      N2 = suppressWarnings(as.integer(tok[6])),
+      response = suppressWarnings(as.integer(tok[7])),
+      accuracy = suppressWarnings(as.integer(tok[8]))
+    )
+  }
+}
+
+trials <- list()
+trial_count <- 0L
+
+trial_n <- NA_integer_
+t_start <- NA_integer_
+t_end <- NA_integer_
+t_fix <- NA_integer_
+t_N1 <- NA_integer_
+t_N2 <- NA_integer_
+
+for (i in seq_len(nrow(msg))) {
+  text_i <- msg$text[i]
+  if (is.na(text_i) || text_i == "") next
+
+  sa <- strsplit(trimws(text_i), "\\s+")[[1]]
+  if (length(sa) == 0) next
+
+  if (sa[1] == "TRIAL_START" && length(sa) >= 2) {
+    trial_n <- suppressWarnings(as.integer(sa[2]))
+    t_start <- as.integer(msg$time[i])
+  }
+
+  if (sa[1] == "EVENT_FixationDot") {
+    t_fix <- as.integer(msg$time[i])
+  }
+
+  if (sa[1] == "EVENT_N1") {
+    t_N1 <- as.integer(msg$time[i])
+  }
+
+  if (sa[1] == "EVENT_N2") {
+    t_N2 <- as.integer(msg$time[i])
+  }
+
+  if (sa[1] == "TRIAL_END" && length(sa) >= 2) {
+    t_end <- as.integer(msg$time[i])
+  }
+
+  ready <- !is.na(trial_n) && !is.na(t_start) && !is.na(t_fix) && !is.na(t_N1) && !is.na(t_N2) && !is.na(t_end)
+
+  if (ready) {
+    trial_count <- trial_count + 1L
+
+    idx_start <- closest_index(t_start, raw$time)
+    idx_end <- closest_index(t_end - 1L, raw$time)
+
+    if (idx_end < idx_start) {
+      tmp <- idx_start
+      idx_start <- idx_end
+      idx_end <- tmp
+    }
+
+    idx <- seq.int(idx_start, idx_end)
+
+    timestamp <- as.integer(raw$time[idx] - t_N1)
+    eye_x <- as.numeric(raw$xp[idx])
+    eye_y <- as.numeric(raw$yp[idx])
+    pupil_size <- as.numeric(raw$ps[idx])
+
+    # Eyelink missing code and impossible pupil values -> NA
+    miss <- (eye_x == 100000000) | (eye_y == 100000000)
+    eye_x[miss] <- NA_real_
+    eye_y[miss] <- NA_real_
+    pupil_size[miss] <- NA_real_
+    pupil_size[pupil_size <= 0] <- NA_real_
+
+    td <- trialdata_map[[as.character(trial_n)]]
+
+    trials[[trial_count]] <- list(
+      trial_n = trial_n,
+      t_start = t_start,
+      t_end = t_end,
+      t_fix = t_fix,
+      t_N1 = t_N1,
+      t_N2 = t_N2,
+      t_resp = t_end,
+      N1 = if (!is.null(td)) td$N1 else NA_integer_,
+      N2 = if (!is.null(td)) td$N2 else NA_integer_,
+      response = if (!is.null(td)) td$response else NA_integer_,
+      accuracy = if (!is.null(td)) td$accuracy else NA_integer_,
+      is_hard = if (!is.null(td)) td$is_hard else NA_integer_,
+      timestamp = timestamp,
+      eye_x = eye_x,
+      eye_y = eye_y,
+      pupil_size = pupil_size
+    )
+
+    # reset state for the next trial
+    trial_n <- NA_integer_
+    t_start <- NA_integer_
+    t_end <- NA_integer_
+    t_fix <- NA_integer_
+    t_N1 <- NA_integer_
+    t_N2 <- NA_integer_
+  }
+}
+
+ds2 <- list(trial = trials)
+
+length(ds2$trial)
+names(ds2$trial[[1]])
+```
+
+Trial summary table:
+
+```{r}
+trial_tab <- data.frame(
+  trial_n = vapply(ds2$trial, function(x) x$trial_n, numeric(1)),
+  is_hard = vapply(ds2$trial, function(x) x$is_hard, numeric(1)),
+  N1 = vapply(ds2$trial, function(x) x$N1, numeric(1)),
+  N2 = vapply(ds2$trial, function(x) x$N2, numeric(1)),
+  response = vapply(ds2$trial, function(x) x$response, numeric(1)),
+  accuracy = vapply(ds2$trial, function(x) x$accuracy, numeric(1))
+)
+trial_tab
+```
+
+## Activity 5 - Raw pupil traces (first 4 trials)
+
+```{r, fig.align='center', fig.width=10, fig.height=4}
+trial_ids <- 1:4
+
+y_rng <- range(unlist(lapply(ds2$trial[trial_ids], function(tr) tr$pupil_size)), na.rm = TRUE)
+
+plot(ds2$trial[[trial_ids[1]]]$timestamp, ds2$trial[[trial_ids[1]]]$pupil_size,
+     type = "l", lwd = 1.5, col = "black",
+     xlab = "Time from N1 onset [ms]", ylab = "Pupil area [a.u.]",
+     ylim = y_rng)
+
+for (k in trial_ids[-1]) {
+  lines(ds2$trial[[k]]$timestamp, ds2$trial[[k]]$pupil_size, lwd = 1.2)
+}
+
+abline(v = 0, lty = 2)
+```
+
+## Activity 6 - Blink/artifact detection via pupil velocity
+
+Eyeblinks generate unrealistically fast pupil-size changes. We compute the derivative and reject values above a threshold.
+
+```{r, fig.align='center', fig.width=10, fig.height=4}
+t <- 1
+tr <- ds2$trial[[t]]
+
+threshold <- 0.4 * 10^4
+pavel <- vecvel(cbind(tr$pupil_size, rep(0, length(tr$pupil_size))), sampling = 1000, type = 2)[, 1]
+
+plot(tr$timestamp, abs(pavel), type = "l", lwd = 1.2,
+     xlab = "Time from N1 onset [ms]", ylab = "|dpupil/dt| [a.u./s]")
+abline(h = threshold, lty = 2, col = "red")
+```
+
+```{r, fig.align='center', fig.width=10, fig.height=4}
+pa_clean <- tr$pupil_size
+pa_clean[abs(pavel) > threshold] <- NA_real_
+pa_clean[pa_clean < 650] <- NA_real_
+
+plot(tr$timestamp, tr$pupil_size, type = "l", lwd = 1,
+     xlab = "Time from N1 onset [ms]", ylab = "Pupil area [a.u.]",
+     col = "grey60")
+lines(tr$timestamp, pa_clean, lwd = 2, col = "black")
+legend("topleft", legend = c("raw", "cleaned"), col = c("grey60", "black"), lty = 1, bty = "n")
+```
+
+## Activity 7 - Align trials and baseline-normalize
+
+For each trial:
+
+- remove high-velocity artifacts and tiny pupil values
+- compute baseline on `time < 0` (before N1)
+- keep `0 <= time < (t_resp - t_N1)`
+- compute percent change:
+
+$$\text{pupil change} = \left(\frac{\text{pupil}}{\text{baseline}} - 1\right) \times 100$$
+
+```{r}
+n_trials <- length(ds2$trial)
+max_len <- max(vapply(ds2$trial, function(tr) tr$t_resp - tr$t_N1, numeric(1)))
+pa_matrix <- matrix(NA_real_, nrow = n_trials, ncol = max_len)
+
+for (i in seq_along(ds2$trial)) {
+  tr <- ds2$trial[[i]]
+
+  time <- tr$timestamp
+  pa <- tr$pupil_size
+
+  pavel <- vecvel(cbind(pa, rep(0, length(pa))), 1000, 2)[, 1]
+
+  pa[abs(pavel) > threshold] <- NA_real_
+  pa[pa < 650] <- NA_real_
+
+  baseline <- mean(pa[time < 0], na.rm = TRUE)
+  if (!is.finite(baseline)) next
+
+  pa_ok <- pa[time >= 0 & time < (tr$t_resp - tr$t_N1)]
+  pa_ok <- ((pa_ok / baseline) - 1) * 100
+
+  if (length(pa_ok) > 0) {
+    pa_matrix[i, seq_along(pa_ok)] <- pa_ok
+  }
+}
+
+dim(pa_matrix)
+```
+
+## Activity 8 - Plot all trials and grand average
+
+```{r, fig.align='center', fig.width=10, fig.height=4}
+pa_mean <- colMeans(pa_matrix, na.rm = TRUE)
+time_sec <- seq_along(pa_mean) / 1000
+
+# Typical N2 timing relative to N1
+n2_time <- median(vapply(ds2$trial, function(tr) tr$t_N2 - tr$t_N1, numeric(1)), na.rm = TRUE) / 1000
+
+y_lim <- range(pa_matrix, na.rm = TRUE)
+plot(NA, NA, xlim = c(-0.5, 10), ylim = y_lim,
+     xlab = "Time [sec]", ylab = "Pupil area [% change from baseline]")
+
+matlines(time_sec, t(pa_matrix), lty = 1, lwd = 0.4, col = rgb(0.8, 0.8, 0.8, 0.7))
+abline(v = n2_time, lty = 2, col = "grey50")
+lines(time_sec, pa_mean, lwd = 2, col = "black")
+```
+
+## Activity 9 - Final plot: smoothed mean and SEM ribbon
+
+```{r, fig.align='center', fig.width=10, fig.height=4}
+pa_sd <- apply(pa_matrix, 2, sd, na.rm = TRUE)
+n <- colSums(!is.na(pa_matrix))
+sem <- pa_sd / sqrt(pmax(n, 1))
+
+pa_mean <- colMeans(pa_matrix, na.rm = TRUE)
+pa_mean_smooth <- movmean_partial(pa_mean, 300)
+time_sec <- seq_along(pa_mean_smooth) / 1000
+ok <- is.finite(pa_mean_smooth) & is.finite(sem)
+
+ylim_all <- range(c(pa_mean_smooth[ok] - sem[ok], pa_mean_smooth[ok] + sem[ok]), na.rm = TRUE)
+
+plot(NA, NA, xlim = c(-0.5, 10), ylim = ylim_all,
+     xlab = "Time [sec]", ylab = "Pupil area [% change from baseline]")
+abline(v = n2_time, lty = 2, col = "grey50")
+
+polygon(c(time_sec[ok], rev(time_sec[ok])),
+        c(pa_mean_smooth[ok] + sem[ok], rev(pa_mean_smooth[ok] - sem[ok])),
+        col = rgb(0.8, 0.8, 0.8, 0.8), border = NA)
+
+lines(time_sec[ok], pa_mean_smooth[ok], lwd = 2, col = "black")
+```
+
+## Activity 10 - Optional: easy vs hard traces
+
+```{r, fig.align='center', fig.width=10, fig.height=4}
+is_hard <- vapply(ds2$trial, function(tr) tr$is_hard == 1, logical(1))
+
+mean_easy <- colMeans(pa_matrix[!is_hard, , drop = FALSE], na.rm = TRUE)
+mean_hard <- colMeans(pa_matrix[is_hard, , drop = FALSE], na.rm = TRUE)
+
+mean_easy_s <- movmean_partial(mean_easy, 300)
+mean_hard_s <- movmean_partial(mean_hard, 300)
+
+time_sec <- seq_along(mean_easy_s) / 1000
+
+y_lim <- range(c(mean_easy_s, mean_hard_s), na.rm = TRUE)
+plot(time_sec, mean_easy_s, type = "l", lwd = 2, col = "steelblue",
+     xlab = "Time [sec]", ylab = "Pupil area [% change from baseline]",
+     xlim = c(-0.5, 10), ylim = y_lim)
+lines(time_sec, mean_hard_s, lwd = 2, col = "firebrick")
+abline(v = n2_time, lty = 2, col = "grey50")
+legend("topleft", legend = c("easy", "hard"), col = c("steelblue", "firebrick"), lty = 1, lwd = 2, bty = "n")
+```
+
+Practice tasks:
+
+- [ ] Test different velocity thresholds instead of `0.4 * 10^4` and inspect how many samples/trials are removed.
+- [ ] Compute peak pupil dilation for each trial, then compare easy vs hard trials statistically.
+- [ ] Repeat the full workflow for all participants in `./data`.
