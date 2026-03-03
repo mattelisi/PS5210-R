@@ -28,6 +28,18 @@ Note: to download a single folder from a github repository you can use [https://
 <br><br>
 
 
+# Workshop analysis of eyetracking data (part 2: pupil size)
+
+### Mental arithmetic task
+
+[Worksheet](workshop_eyemovements/pupil_math/worksheet_pupil_math_analysis_v1.html.html)
+
+[Data folder](https://github.com/mattelisi/PS5210-R/tree/main/workshop_eyemovements/pupil_math/data)
+
+<br><br>
+
+
+
 <br><br><br><br><br><br>
 
  ---

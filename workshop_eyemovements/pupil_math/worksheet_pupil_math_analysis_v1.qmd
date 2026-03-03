@@ -11,9 +11,10 @@ execute:
   echo: true
   warning: false
   message: false
+bibliography: pupil.bib
 ---
 
-This worksheet translates the Matlab pupil-analysis workflow into R for the mental arithmetic task.
+This worksheet translates illustrates the analysis of pupil-size measures in the mental arithmetic task.
 
 ## Activity 1 - Setup
 
@@ -26,11 +27,44 @@ source("eyelink_source.R")
 
 ## Activity 2 - Task summary
 
-Participants hear two numbers and mentally multiply them. Pupil size increases with cognitive load, so we compare pupil traces across trials and difficulty.
+This experiment aimed at measuring pupil responses to mental effort exerted while multiplying numbers [@HessPolt1964;@AhernBeatty1979]. Essentially, two numbers are presented via headphones, and the participants is required to multiply them and give the answers while their pupil size is measured.
 
 ```{r, echo=FALSE, out.width='60%', fig.cap='Average percent increase in pupil diameter as a function of problem difficulty (Hess & Polt, 1964; re-plotted by Ahern & Beatty, 1979).', fig.align='center'}
-knitr::include_graphics("beatty_summary.png")
+knitr::include_graphics("img/beatty_summary.png")
 ```
+```{r, echo=FALSE, out.width='40%', fig.cap='Original average pupil traces as plotted by Ahern & Beatty (1979).', fig.align='center'}
+knitr::include_graphics("img/ahern79.png")
+```
+
+
+&nbsp;
+
+If you look at the code of the task (in the file `pupil_math.m`) you can see how the numbers were selected (around line 133):
+
+```matlab
+%% task settings
+multiplicand_easy = [6,9];
+multiplier_easy = [12,14];
+multiplicand_hard = [11,14];
+multiplier_hard = [16,19];
+```
+
+&nbsp;
+
+For each condition, the two numbers defined the range of values that could be presented as number. Each trial then the problem randomly decided whether to run an easy or difficult trial, and sampled a single integer value (using the matlab function `randi`) for both multiplicand and multiplier. The code that do this is in the part of the code that loop over trial (around line 232 of `pupil_math.m`):
+
+```matlab
+% random
+is_hard = randn(1)>0;
+if is_hard
+    N1 = randi(multiplicand_hard, 1);
+    N2 = randi(multiplier_hard, 1);
+else
+    N1 = randi(multiplicand_easy, 1);
+    N2 = randi(multiplier_easy, 1);
+end
+```
+
 
 ## Activity 3 - Convert EDF to ASC and import
 
@@ -60,9 +94,50 @@ table(grepl("^TRIAL_END", dat$msg$text))
 head(dat$msg$text[grepl("^TrialData", dat$msg$text)], 6)
 ```
 
-## Activity 4 - Parse trials (R version of `ds2.trial`)
+The `TrialData` message includes the experiment-specific information about each trials and the response. These are created in the matlab code at the end of each trial. From the `pupil_math.m` file:
 
-We rebuild the trial-wise structure used in Matlab. Each trial will include:
+```matlab
+[...]
+            % collect trial & response information
+            trialData = sprintf('%i\t%i\t%i\t%i\t%i\t',[is_hard N1 N2 response correct]);
+
+            % timing
+            timeData = sprintf('%.2f\t',[tFix]);
+
+            % collect data for tab [14 x trialData, 6 x timeData, 1 x respData]
+            data = sprintf('%s\t%s\t%s',trialData, timeData);
+
+
+    end
+
+    Eyelink('message', 'TRIAL_END %d',  t);
+    Eyelink('stoprecording');
+
+    dataStr = sprintf('%i\t%s%s\n',t,info_str,data); % print data to string
+    %if const.TEST; fprintf(1,sprintf('\n%s',dataStr));end
+
+    % save trial info to eye mv rec
+    Eyelink('message','TrialData %s', dataStr);
+
+[...]
+```
+
+we can see that `dataStr` is a string of value, separated with tabs (`\t`), and including in order:
+
+1. `t`
+2. `info_str`, participant identifier
+3. `data`, which is itself a tab-separated string composed of
+
+    1) `is_hard`, binary, indicates whether is a "hard" trial
+    2) `N1`, first digit
+    3) `N2`, second digit
+    4) `response`, response from participant
+    5) `correct`, binary, is hte response correct?
+
+
+## Activity 4 - Parse trials 
+
+We wrangle our data into a trial-wise list object. Each trial in the list will include:
 
 - event times (`t_start`, `t_fix`, `t_N1`, `t_N2`, `t_resp`, `t_end`)
 - task variables (`N1`, `N2`, `response`, `accuracy`, `is_hard`)
@@ -155,9 +230,14 @@ for (i in seq_len(nrow(msg))) {
 
     idx <- seq.int(idx_start, idx_end)
 
+    # subtract t_N1 so that in each trial zero is the time of the first number
     timestamp <- as.integer(raw$time[idx] - t_N1)
+    
+    # we have gaze position
     eye_x <- as.numeric(raw$xp[idx])
     eye_y <- as.numeric(raw$yp[idx])
+    
+    # and pupil size
     pupil_size <- as.numeric(raw$ps[idx])
 
     # Eyelink missing code and impossible pupil values -> NA
@@ -218,16 +298,16 @@ trial_tab <- data.frame(
 trial_tab
 ```
 
-## Activity 5 - Raw pupil traces (first 4 trials)
+## Activity 5 - Raw pupil traces
 
-```{r, fig.align='center', fig.width=10, fig.height=4}
+```{r, fig.align='center', fig.width=10, fig.height=5}
 trial_ids <- 1:4
 
 y_rng <- range(unlist(lapply(ds2$trial[trial_ids], function(tr) tr$pupil_size)), na.rm = TRUE)
 
 plot(ds2$trial[[trial_ids[1]]]$timestamp, ds2$trial[[trial_ids[1]]]$pupil_size,
      type = "l", lwd = 1.5, col = "black",
-     xlab = "Time from N1 onset [ms]", ylab = "Pupil area [a.u.]",
+     xlab = "Time from N1 offset [ms]", ylab = "Pupil area [a.u.]",
      ylim = y_rng)
 
 for (k in trial_ids[-1]) {
@@ -239,9 +319,12 @@ abline(v = 0, lty = 2)
 
 ## Activity 6 - Blink/artifact detection via pupil velocity
 
-Eyeblinks generate unrealistically fast pupil-size changes. We compute the derivative and reject values above a threshold.
+Note that in the figure even if pupil size values of 0 were removed at the previous steps (see code), we still have artifacts of pupil area decreasing very rapidly in correspondence of eye blinks. One straightforward approach for dealing with this is (yet again!) using differentiation. These apparent changes in pupil size occurring around eyeblinks are too fast to be real pupil movements; they are instead caused by the eyelid covering the pupil. Hence we compute the rate of change of pupil size as a function of time, and basically remove parts where the changes occur too fast. 
 
-```{r, fig.align='center', fig.width=10, fig.height=4}
+This is illustrated in the next figure, where I have plotted the rate of change in pupil size as a function of time. The horizontal line represents a possible threshold for excluding artifacts.
+
+
+```{r, fig.align='center', fig.width=10, fig.height=5}
 t <- 1
 tr <- ds2$trial[[t]]
 
@@ -249,7 +332,7 @@ threshold <- 0.4 * 10^4
 pavel <- vecvel(cbind(tr$pupil_size, rep(0, length(tr$pupil_size))), sampling = 1000, type = 2)[, 1]
 
 plot(tr$timestamp, abs(pavel), type = "l", lwd = 1.2,
-     xlab = "Time from N1 onset [ms]", ylab = "|dpupil/dt| [a.u./s]")
+     xlab = "Time from N1 offset [ms]", ylab = "|dpupil/dt| [a.u./s]")
 abline(h = threshold, lty = 2, col = "red")
 ```
 
@@ -259,13 +342,81 @@ pa_clean[abs(pavel) > threshold] <- NA_real_
 pa_clean[pa_clean < 650] <- NA_real_
 
 plot(tr$timestamp, tr$pupil_size, type = "l", lwd = 1,
+     xlab = "Time from N1 offset [ms]", ylab = "Pupil area [a.u.]",
+     col = "grey60")
+lines(tr$timestamp, pa_clean, lwd = 2, col = "black")
+legend("topleft", legend = c("raw", "cleaned"), col = c("grey60", "black"), lty = 1, bty = "n")
+```
+
+We can see that there are still some isolated, short parts of consecutive non-NA values. Several of these are likely outlier that were not removed by our velocity filter. We can check how many there are and how long they are with using:
+
+```{r}
+table(rle(!is.na(pa_clean))$lengths[rle(!is.na(pa_clean))$values])[1:10]
+```
+This will print the count of how many short, isolated sequences, long up to 10 consecutive non-NA values.
+
+We can select the gaps shorter than a minimum amount, and replace with NA
+
+```{r}
+min_length <- 3
+
+r <- rle(!is.na(pa_clean))
+run_end <- cumsum(r$lengths)
+run_beg <- run_end - r$lengths + 1
+
+for (k in seq_along(r$lengths)) {
+  if (r$values[k] && r$lengths[k] <= min_length) {
+    pa_clean[run_beg[k]:run_end[k]] <- NA
+  }
+}
+```
+
+
+Next we can check again our signal 
+
+```{r, fig.align='center', fig.width=10, fig.height=4}
+plot(tr$timestamp, tr$pupil_size, type = "l", lwd = 1,
      xlab = "Time from N1 onset [ms]", ylab = "Pupil area [a.u.]",
      col = "grey60")
 lines(tr$timestamp, pa_clean, lwd = 2, col = "black")
 legend("topleft", legend = c("raw", "cleaned"), col = c("grey60", "black"), lty = 1, bty = "n")
 ```
 
-## Activity 7 - Align trials and baseline-normalize
+
+## Activity 7 - Gap interpolation
+
+We could leave the gap as empty, and carry on with the analysis, although an additional steps that is often implemented in these analysis in practice is the interpolation of the gaps. The rationale is that during the eye-blink the pupil size will be somewhere between its size before and after the blink. Two common approaches are _linear_ and _quadratic_ interpolation. 
+
+There are some custom functions that implement this in the `signal_processing.R` script:
+
+```{r}
+source("signal_processing.R")
+```
+
+We can plot and compare the two approaches:
+
+
+```{r, fig.align='center', fig.width=10, fig.height=8}
+# interpolate
+# Note: sp = sampling period in seconds (default 1/60 s).
+#       max = maximum gap length in milliseconds to interpolate (default 50 ms).
+pa_linear <- fillGap(pa_clean, sp = 1/60, max = 10^5, type = "linear")
+pa_cubic <- fillGap(pa_clean, sp = 1/60, max = 10^5, type = "cubic")
+
+# plot interpolated
+plot(tr$timestamp, pa_cubic, lwd = 1, col = "red", type="l",
+     xlab = "Time from N1 offset [ms]", ylab = "Pupil area [a.u.]")
+lines(tr$timestamp, pa_linear, lwd = 1, col = "blue")
+
+# samples with gaps
+lines(tr$timestamp, pa_clean, lwd = 2, col = "black")
+
+# legend
+legend("topleft", legend = c("linear", "cubic", "sampled points"), col = c("blue","red", "black"), lty = c(1,1,2), bty = "n")
+```
+
+
+## Activity 8 - Align trials and baseline-normalize
 
 For each trial:
 
@@ -277,6 +428,11 @@ For each trial:
 $$\text{pupil change} = \left(\frac{\text{pupil}}{\text{baseline}} - 1\right) \times 100$$
 
 ```{r}
+# settings (see above)
+min_length <- 3
+threshold <- 0.4 * 10^4
+
+# initialise
 n_trials <- length(ds2$trial)
 max_len <- max(vapply(ds2$trial, function(tr) tr$t_resp - tr$t_N1, numeric(1)))
 pa_matrix <- matrix(NA_real_, nrow = n_trials, ncol = max_len)
@@ -287,11 +443,26 @@ for (i in seq_along(ds2$trial)) {
   time <- tr$timestamp
   pa <- tr$pupil_size
 
+  # check blinks based on velocity
   pavel <- vecvel(cbind(pa, rep(0, length(pa))), 1000, 2)[, 1]
-
   pa[abs(pavel) > threshold] <- NA_real_
   pa[pa < 650] <- NA_real_
+  
+  # further exclude possible outlier (small consecutive non-NA)
+  min_length <- 3
+  r <- rle(!is.na(pa))
+  run_end <- cumsum(r$lengths)
+  run_beg <- run_end - r$lengths + 1
+  for (k in seq_along(r$lengths)) {
+    if (r$values[k] && r$lengths[k] <= min_length) {
+      pa[run_beg[k]:run_end[k]] <- NA
+    }
+  }
+  
+  # linearly interpolate gaps <= 300ms
+  pa <- fillGap(pa, sp = 1/60, max = 250, type = "linear")
 
+  # compute baseline and normalise as % change
   baseline <- mean(pa[time < 0], na.rm = TRUE)
   if (!is.finite(baseline)) next
 
@@ -306,14 +477,17 @@ for (i in seq_along(ds2$trial)) {
 dim(pa_matrix)
 ```
 
-## Activity 8 - Plot all trials and grand average
+## Activity 9 - Plot all trials and grand average
 
-```{r, fig.align='center', fig.width=10, fig.height=4}
+```{r, fig.align='center', fig.width=6, fig.height=6}
 pa_mean <- colMeans(pa_matrix, na.rm = TRUE)
 time_sec <- seq_along(pa_mean) / 1000
 
-# Typical N2 timing relative to N1
-n2_time <- median(vapply(ds2$trial, function(tr) tr$t_N2 - tr$t_N1, numeric(1)), na.rm = TRUE) / 1000
+# N2 timing relative to N1 was 2 seconds
+n2_time <- 2
+
+# note that we have have the time at which number presentation ended; the median value was:
+median(vapply(ds2$trial, function(tr) tr$t_N2 - tr$t_N1, numeric(1)), na.rm = TRUE) / 1000
 
 y_lim <- range(pa_matrix, na.rm = TRUE)
 plot(NA, NA, xlim = c(-0.5, 10), ylim = y_lim,
@@ -324,9 +498,9 @@ abline(v = n2_time, lty = 2, col = "grey50")
 lines(time_sec, pa_mean, lwd = 2, col = "black")
 ```
 
-## Activity 9 - Final plot: smoothed mean and SEM ribbon
+## Activity 10 - Final plot: smoothed mean and SEM ribbon
 
-```{r, fig.align='center', fig.width=10, fig.height=4}
+```{r, fig.align='center', fig.width=6, fig.height=6}
 pa_sd <- apply(pa_matrix, 2, sd, na.rm = TRUE)
 n <- colSums(!is.na(pa_matrix))
 sem <- pa_sd / sqrt(pmax(n, 1))
@@ -349,9 +523,9 @@ polygon(c(time_sec[ok], rev(time_sec[ok])),
 lines(time_sec[ok], pa_mean_smooth[ok], lwd = 2, col = "black")
 ```
 
-## Activity 10 - Optional: easy vs hard traces
+## Activity 11 - Optional: easy vs hard traces
 
-```{r, fig.align='center', fig.width=10, fig.height=4}
+```{r, fig.align='center', fig.width=6, fig.height=6}
 is_hard <- vapply(ds2$trial, function(tr) tr$is_hard == 1, logical(1))
 
 mean_easy <- colMeans(pa_matrix[!is_hard, , drop = FALSE], na.rm = TRUE)
@@ -373,6 +547,6 @@ legend("topleft", legend = c("easy", "hard"), col = c("steelblue", "firebrick"),
 
 Practice tasks:
 
-- [ ] Test different velocity thresholds instead of `0.4 * 10^4` and inspect how many samples/trials are removed.
+- [ ] Test different settings, for example different velocity thresholds instead of `0.4 * 10^4` and inspect how many samples/trials are removed.
 - [ ] Compute peak pupil dilation for each trial, then compare easy vs hard trials statistically.
-- [ ] Repeat the full workflow for all participants in `./data`.
+- [ ] Repeat the full workflow for all participants in `./data`, and plot average group-level results.
