@@ -32,7 +32,7 @@ Note: to download a single folder from a github repository you can use [https://
 
 ### Mental arithmetic task
 
-[Worksheet](workshop_eyemovements/pupil_math/worksheet_pupil_math_analysis_v1.html.html)
+[Worksheet](workshop_eyemovements/pupil_math/worksheet_pupil_math_analysis_v1.html)
 
 [Data folder](https://github.com/mattelisi/PS5210-R/tree/main/workshop_eyemovements/pupil_math/data)
 
